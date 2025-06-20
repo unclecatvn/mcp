@@ -1,0 +1,32 @@
+{
+  "name": "@mcp/database",
+  "version": "1.0.0",
+  "description": "MCP Server hỗ trợ multi-database - MySQL/MariaDB, PostgreSQL, SQL Server",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --inspect index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "mcp",
+    "mysql",
+    "mariadb",
+    "postgresql",
+    "sqlserver",
+    "database",
+    "sql"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^0.5.0",
+    "mssql": "^10.0.4",
+    "mysql2": "^3.6.5",
+    "pg": "^8.16.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

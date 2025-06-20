@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "chroma-memory": {
+      "command": "node",
+      "args": ["index.js"],
+      "cwd": "/home/khuathieu/dev-mcp/chroma-mcp",
+      "env": {
+        "CHROMA_URL": "http://localhost:8000",
+        "OPENAI_API_KEY": "your-openai-api-key-here",
+        "OPENAI_MODEL": "text-embedding-3-small"
+      }
+    }
+  }
+} 
