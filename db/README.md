@@ -45,6 +45,42 @@ SQLSERVER_PASSWORD=yourpassword
 SQLSERVER_DATABASE=mydatabase
 ```
 
+### Cursor MCP Configuration
+
+Thêm config vào file `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "db": {
+      "command": "node",
+      "args": ["/path/to/your/db/index.js"],
+      "env": {
+        "MYSQL_HOST": "localhost",
+        "MYSQL_USER": "root",
+        "MYSQL_PASSWORD": "yourpassword",
+        "MYSQL_DATABASE": "mydatabase",
+        
+        "POSTGRESQL_HOST": "localhost", 
+        "POSTGRESQL_USER": "postgres",
+        "POSTGRESQL_PASSWORD": "yourpassword",
+        "POSTGRESQL_DATABASE": "mydatabase",
+        
+        "SQLSERVER_SERVER": "localhost",
+        "SQLSERVER_USER": "sa", 
+        "SQLSERVER_PASSWORD": "yourpassword",
+        "SQLSERVER_DATABASE": "mydatabase"
+      }
+    }
+  }
+}
+```
+
+**Lưu ý:** 
+- Thay `/path/to/your/db/index.js` bằng đường dẫn thực tế đến file index.js
+- Chỉ cần config env vars cho database types mà bạn sử dụng
+- Restart Cursor sau khi thay đổi config
+
 ## 🚀 Sử dụng
 
 ### Tool: `db_query`

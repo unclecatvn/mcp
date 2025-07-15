@@ -83,12 +83,33 @@ export default class MultiDatabaseMCPServer {
     }
   }
 
+  // Helper method to detect DML/DDL operations
+  isDMLDDLQuery(query) {
+    const normalizedQuery = query.trim().toUpperCase();
+    const dmlDdlKeywords = [
+      'INSERT', 'UPDATE', 'DELETE', 'MERGE',
+      'CREATE', 'ALTER', 'DROP', 'TRUNCATE', 'RENAME',
+      'GRANT', 'REVOKE', 'COMMIT', 'ROLLBACK'
+    ];
+    
+    return dmlDdlKeywords.some(keyword => 
+      normalizedQuery.startsWith(keyword + ' ') || 
+      normalizedQuery.startsWith(keyword + '\n') ||
+      normalizedQuery.startsWith(keyword + '\t')
+    );
+  }
+
   setupToolHandlers() {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: [
         {
           name: 'db_query',
-          description: `Thực thi SQL query trên database.\n\n🎯 HỖ TRỢ: MySQL, PostgreSQL, SQL Server\n🔥 ĐÃ SETUP SẴN: env vars có sẵn`,
+          description: `Thực thi SQL query trên database.
+
+🎯 HỖ TRỢ: MySQL, PostgreSQL, SQL Server
+🔥 ĐÃ SETUP SẴN: env vars có sẵn
+
+⚠️  CẢNH BÁO: AI KHÔNG ĐƯỢC tự ý thực hiện DML/DDL (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, etc.) - cần xin phép người dùng trước!`,
           inputSchema: {
             type: 'object',
             properties: {
@@ -137,10 +158,26 @@ export default class MultiDatabaseMCPServer {
       const safeLog = query.replace(/password\s*=\s*['"][^'"]*['"]/gi, "password='***'");
       console.log(`[DB MCP] Executing ${type}: ${safeLog.slice(0, 200)}${safeLog.length > 200 ? '...' : ''}`);
 
+      // Check for DML/DDL operations and warn
+      if (this.isDMLDDLQuery(query)) {
+        const warningMsg = `⚠️  DML/DDL DETECTED: ${query.trim().split('\n')[0]}
+
+❌ AI không được tự ý thực hiện thao tác này
+✅ Cần xin phép người dùng trước khi tiếp tục`;
+        
+        return { 
+          content: [{ type: 'text', text: warningMsg }], 
+          isError: true 
+        };
+      }
+
       try {
         const db = await this.getConnection(type, cfg);
         const res = await db.query(query);
-        return { content: [{ type: 'text', text: JSON.stringify(res, null, 2) }] };
+        if (Array.isArray(res.results) && res.results.length === 0) {
+          return { content: [{ type: 'text', text: 'Query không trả về record nào' }] };
+        }
+        return { content: [{ type: 'text', text: JSON.stringify(res.results, null, 2) }] };
       } catch (err) {
         return { content: [{ type: 'text', text: `❌ ${err.message}` }], isError: true };
       }
