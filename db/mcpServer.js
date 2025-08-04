@@ -159,17 +159,17 @@ export default class MultiDatabaseMCPServer {
       console.log(`[DB MCP] Executing ${type}: ${safeLog.slice(0, 200)}${safeLog.length > 200 ? '...' : ''}`);
 
       // Check for DML/DDL operations and warn
-      if (this.isDMLDDLQuery(query)) {
-        const warningMsg = `⚠️  DML/DDL DETECTED: ${query.trim().split('\n')[0]}
+//       if (this.isDMLDDLQuery(query)) {
+//         const warningMsg = `⚠️  DML/DDL DETECTED: ${query.trim().split('\n')[0]}
 
-❌ AI không được tự ý thực hiện thao tác này
-✅ Cần xin phép người dùng trước khi tiếp tục`;
+// ❌ AI không được tự ý thực hiện thao tác này
+// ✅ Cần xin phép người dùng trước khi tiếp tục`;
         
-        return { 
-          content: [{ type: 'text', text: warningMsg }], 
-          isError: true 
-        };
-      }
+//         return { 
+//           content: [{ type: 'text', text: warningMsg }], 
+//           isError: true 
+//         };
+//       }
 
       try {
         const db = await this.getConnection(type, cfg);
