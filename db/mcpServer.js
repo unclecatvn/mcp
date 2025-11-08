@@ -60,10 +60,11 @@ export default class MultiDatabaseMCPServer {
   }
 
   getConnectionKey(type, cfg) {
-    const host = cfg.host || cfg.server;
+    const host = cfg.host || cfg.server || "localhost";
+    const port = cfg.port || this.getDefaultPort(type);
     const db = cfg.database || "no_database";
     const user = cfg.user || "no_user";
-    return `${type}_${host}_${cfg.port}_${db}_${user}`;
+    return `${type}_${host}_${port}_${db}_${user}`;
   }
   async getConnection(type, cfg) {
     const key = this.getConnectionKey(type, cfg);
@@ -83,7 +84,7 @@ export default class MultiDatabaseMCPServer {
         password: url.password,
         database: url.pathname.slice(1),
       };
-      const normalizedCfg = this.normalizeSqlServerConfig(cfg);
+      const normalizedCfg = this.normalizeSqlServerConfig(cfg, type);
       return this.validateConnectionConfig(normalizedCfg, type);
     } catch (err) {
       throw new Error(`Invalid connection string: ${err.message}`);
@@ -94,8 +95,9 @@ export default class MultiDatabaseMCPServer {
   }
 
   // Normalize SQL Server configuration
-  normalizeSqlServerConfig(cfg) {
-    if (cfg.host) {
+  normalizeSqlServerConfig(cfg, type = "sqlserver") {
+    // Only normalize for SQL Server type
+    if (type === "sqlserver" && cfg.host) {
       cfg.server = cfg.host;
       delete cfg.host;
       cfg.options = { ...SQLSERVER_OPTIONS };
@@ -150,6 +152,8 @@ export default class MultiDatabaseMCPServer {
 
     // Method 1: Parse from CONNECTIONS env var (format: alias1=url1;alias2=url2)
     const connectionsEnv = process.env[`${envPrefix}_CONNECTIONS`];
+    const parseErrors = [];
+
     if (connectionsEnv) {
       const connStrings = connectionsEnv
         .split(";")
@@ -164,9 +168,9 @@ export default class MultiDatabaseMCPServer {
               type
             );
           } catch (e) {
-            console.warn(
-              `[DB MCP] Invalid connection string for ${alias}: ${e.message}`
-            );
+            const errorMsg = `Invalid connection string for ${alias}: ${e.message}`;
+            console.warn(`[DB MCP] ${errorMsg}`);
+            parseErrors.push(errorMsg);
           }
         }
       }
@@ -193,7 +197,7 @@ export default class MultiDatabaseMCPServer {
         database,
       };
 
-      cfg = this.normalizeSqlServerConfig(cfg);
+      cfg = this.normalizeSqlServerConfig(cfg, type);
       cfg = this.validateConnectionConfig(cfg, type);
 
       connections[alias] = cfg;
@@ -217,11 +221,19 @@ export default class MultiDatabaseMCPServer {
           database,
         };
 
-        cfg = this.normalizeSqlServerConfig(cfg);
+        cfg = this.normalizeSqlServerConfig(cfg, type);
         cfg = this.validateConnectionConfig(cfg, type);
 
         connections["default"] = cfg;
       }
+    }
+
+    // If no valid connections found but there were parse errors, throw summary error
+    if (Object.keys(connections).length === 0 && parseErrors.length > 0) {
+      const errorMsg = `❌ Không có connection nào hợp lệ cho ${type.toUpperCase()}:\n${parseErrors
+        .map((err) => `• ${err}`)
+        .join("\n")}`;
+      throw new Error(errorMsg);
     }
 
     return connections;
@@ -393,7 +405,7 @@ ${availableAliases
       database: connection.database || cfg.database,
     };
 
-    return this.normalizeSqlServerConfig(newCfg);
+    return this.normalizeSqlServerConfig(newCfg, type);
   }
 
   // Execute database query and return result
@@ -424,11 +436,33 @@ ${availableAliases
     try {
       const db = await this.getConnection(type, cfg);
       const res = await db.query(query);
+
+      // Validate result object
+      if (!res || typeof res !== "object") {
+        return {
+          content: [
+            {
+              type: "text",
+              text: "❌ Database driver trả về result không hợp lệ",
+            },
+          ],
+          isError: true,
+        };
+      }
+
       if (Array.isArray(res.results) && res.results.length === 0) {
         return {
           content: [{ type: "text", text: "Query không trả về record nào" }],
         };
       }
+
+      // Handle non-array results (like INSERT/UPDATE affected rows)
+      if (!Array.isArray(res.results)) {
+        return {
+          content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
+        };
+      }
+
       return {
         content: [{ type: "text", text: JSON.stringify(res.results, null, 2) }],
       };
@@ -470,7 +504,15 @@ ${availableAliases
   }
 
   async cleanup() {
-    await Promise.all([...this.connections.values()].map((c) => c.close()));
+    const closePromises = [...this.connections.values()].map(async (c) => {
+      try {
+        await c.close();
+      } catch (err) {
+        console.error("[DB MCP] Error closing connection:", err.message);
+      }
+    });
+    await Promise.allSettled(closePromises);
+    this.connections.clear();
   }
   async run() {
     const transport = new StdioServerTransport();
