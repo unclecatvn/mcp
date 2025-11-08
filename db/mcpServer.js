@@ -169,7 +169,7 @@ export default class MultiDatabaseMCPServer {
             );
           } catch (e) {
             const errorMsg = `Invalid connection string for ${alias}: ${e.message}`;
-            console.warn(`[DB MCP] ${errorMsg}`);
+            console.error(`[DB MCP] ${errorMsg}`);
             parseErrors.push(errorMsg);
           }
         }
@@ -427,7 +427,7 @@ ${availableAliases
       /password\s*=\s*['"][^'"]*['"]/gi,
       "password='***'"
     );
-    console.log(
+    console.error(
       `[DB MCP] Executing ${type}: ${safeLog.slice(0, 200)}${
         safeLog.length > 200 ? "..." : ""
       }`
