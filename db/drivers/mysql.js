@@ -22,7 +22,7 @@ export default class MySQLDriver extends BaseDriver {
       multipleStatements: false,
       timezone: "Z",
     });
-    console.info(
+    console.error(
       `[DB MCP] Đã kết nối MySQL: ${this.config.host}:${this.config.port}`
     );
     return this.connection;
@@ -32,6 +32,26 @@ export default class MySQLDriver extends BaseDriver {
     const conn = await this.connect();
     const [results, fields] = await conn.execute(queryText);
     return { results, fields, type: "mysql" };
+  }
+
+  async listTables() {
+    const sql = "SHOW TABLES";
+    const { results } = await this.query(sql);
+    // results is array of objects like { 'Tables_in_dbname': 'tablename' }
+    return results.map(row => Object.values(row)[0]);
+  }
+
+  async describeTable(tableName) {
+    const conn = await this.connect();
+    
+    // Use parameterized queries to prevent injection
+    const [columns] = await conn.query(`DESCRIBE ??`, [tableName]);
+    const [indexes] = await conn.query(`SHOW INDEX FROM ??`, [tableName]);
+
+    return {
+      columns,
+      indexes
+    };
   }
 
   async close() {

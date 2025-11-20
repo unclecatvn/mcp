@@ -13,7 +13,15 @@ export default class BaseDriver {
     throw new Error('query() not implemented');
   }
 
+  async listTables() {
+    throw new Error('listTables() not implemented');
+  }
+
+  async describeTable(tableName) {
+    throw new Error('describeTable() not implemented');
+  }
+
   async close() {
     throw new Error('close() not implemented');
   }
-} 
+}

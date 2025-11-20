@@ -20,7 +20,7 @@ export default class PostgreSQLDriver extends BaseDriver {
     const { Client } = pg;
     this.connection = new Client(this.config);
     await this.connection.connect();
-    console.info(
+    console.error(
       `[DB MCP] Đã kết nối PostgreSQL: ${this.config.host}:${this.config.port}`
     );
     return this.connection;
@@ -34,6 +34,44 @@ export default class PostgreSQLDriver extends BaseDriver {
       fields: result.fields,
       rowCount: result.rowCount,
       type: "postgresql",
+    };
+  }
+
+  async listTables() {
+    const sql = `
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      ORDER BY table_name;
+    `;
+    const { results } = await this.query(sql);
+    return results.map((row) => row.table_name);
+  }
+
+  async describeTable(tableName) {
+    const columnsSql = `
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1
+      ORDER BY ordinal_position;
+    `;
+    
+    // Get indexes to help with optimization
+    const indexesSql = `
+      SELECT indexname, indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public' AND tablename = $1;
+    `;
+
+    const conn = await this.connect();
+    const [colsResult, indexesResult] = await Promise.all([
+      conn.query(columnsSql, [tableName]),
+      conn.query(indexesSql, [tableName])
+    ]);
+
+    return {
+      columns: colsResult.rows,
+      indexes: indexesResult.rows
     };
   }
 

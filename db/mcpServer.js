@@ -20,6 +20,12 @@ class DatabaseConnection {
   query(q) {
     return this.driver.query(q);
   }
+  listTables() {
+    return this.driver.listTables();
+  }
+  describeTable(tableName) {
+    return this.driver.describeTable(tableName);
+  }
   close() {
     return this.driver.close();
   }
@@ -64,8 +70,11 @@ export default class MultiDatabaseMCPServer {
     const port = cfg.port || this.getDefaultPort(type);
     const db = cfg.database || "no_database";
     const user = cfg.user || "no_user";
-    return `${type}_${host}_${port}_${db}_${user}`;
+    // Include options in the key to distinguish connections with different settings (e.g. SSL)
+    const options = cfg.options ? JSON.stringify(cfg.options) : "{}";
+    return `${type}_${host}_${port}_${db}_${user}_${options}`;
   }
+
   async getConnection(type, cfg) {
     const key = this.getConnectionKey(type, cfg);
     if (!this.connections.has(key)) {
@@ -145,15 +154,11 @@ export default class MultiDatabaseMCPServer {
     return cfg;
   }
 
-  // Parse multiple database connections from environment variables
-  parseMultipleConnections(type) {
+  // --- Connection Parsing Helpers ---
+
+  parseConnectionStringEnv(type, connections, parseErrors) {
     const envPrefix = type.toUpperCase();
-    const connections = {};
-
-    // Method 1: Parse from CONNECTIONS env var (format: alias1=url1;alias2=url2)
     const connectionsEnv = process.env[`${envPrefix}_CONNECTIONS`];
-    const parseErrors = [];
-
     if (connectionsEnv) {
       const connStrings = connectionsEnv
         .split(";")
@@ -175,8 +180,10 @@ export default class MultiDatabaseMCPServer {
         }
       }
     }
+  }
 
-    // Method 2: Parse from numbered DB vars (DB1_HOST, DB1_DATABASE, etc.)
+  parseNumberedEnv(type, connections) {
+    const envPrefix = type.toUpperCase();
     let dbIndex = 1;
     while (true) {
       const alias = `db${dbIndex}`;
@@ -203,30 +210,43 @@ export default class MultiDatabaseMCPServer {
       connections[alias] = cfg;
       dbIndex++;
     }
+  }
 
-    // Method 3: Default single database (backward compatibility)
-    if (Object.keys(connections).length === 0) {
-      const host = process.env[`${envPrefix}_HOST`];
-      const port = process.env[`${envPrefix}_PORT`];
-      const user = process.env[`${envPrefix}_USER`];
-      const password = process.env[`${envPrefix}_PASSWORD`];
-      const database = process.env[`${envPrefix}_DATABASE`];
+  parseLegacyEnv(type, connections) {
+    // Only if no connections found yet
+    if (Object.keys(connections).length > 0) return;
 
-      if (host || database) {
-        let cfg = {
-          host: host || "localhost",
-          port: parseInt(port) || this.getDefaultPort(type),
-          user: user || "root",
-          password: password || "",
-          database,
-        };
+    const envPrefix = type.toUpperCase();
+    const host = process.env[`${envPrefix}_HOST`];
+    const port = process.env[`${envPrefix}_PORT`];
+    const user = process.env[`${envPrefix}_USER`];
+    const password = process.env[`${envPrefix}_PASSWORD`];
+    const database = process.env[`${envPrefix}_DATABASE`];
 
-        cfg = this.normalizeSqlServerConfig(cfg, type);
-        cfg = this.validateConnectionConfig(cfg, type);
+    if (host || database) {
+      let cfg = {
+        host: host || "localhost",
+        port: parseInt(port) || this.getDefaultPort(type),
+        user: user || "root",
+        password: password || "",
+        database,
+      };
 
-        connections["default"] = cfg;
-      }
+      cfg = this.normalizeSqlServerConfig(cfg, type);
+      cfg = this.validateConnectionConfig(cfg, type);
+
+      connections["default"] = cfg;
     }
+  }
+
+  // Parse multiple database connections from environment variables
+  parseMultipleConnections(type) {
+    const connections = {};
+    const parseErrors = [];
+
+    this.parseConnectionStringEnv(type, connections, parseErrors);
+    this.parseNumberedEnv(type, connections);
+    this.parseLegacyEnv(type, connections);
 
     // If no valid connections found but there were parse errors, throw summary error
     if (Object.keys(connections).length === 0 && parseErrors.length > 0) {
@@ -264,19 +284,23 @@ export default class MultiDatabaseMCPServer {
       "ROLLBACK",
     ];
 
-    return dmlDdlKeywords.some(
-      (keyword) =>
-        normalizedQuery.startsWith(keyword + " ") ||
-        normalizedQuery.startsWith(keyword + "\n") ||
-        normalizedQuery.startsWith(keyword + "\t")
+    // Regex to match keywords at start of string OR after a semicolon/newline
+    // \b ensures whole word match
+    // (^|[\;\n\r]+)\s* matches start of string or semicolon/newline followed by optional whitespace
+    const pattern = new RegExp(
+      `(^|[;\\n\\r]+)\\s*(${dmlDdlKeywords.join("|")})\\b`,
+      "i" // Case insensitive
     );
+
+    return pattern.test(normalizedQuery);
   }
 
   // Create tool definition
-  createToolDefinition() {
-    return {
-      name: "db_query",
-      description: `Thực thi SQL query trên database.
+  createToolDefinitions() {
+    return [
+      {
+        name: "db_query",
+        description: `Thực thi SQL query trên database.
 
 🎯 HỖ TRỢ: MySQL, PostgreSQL, SQL Server
 🔥 ĐÃ SETUP SẴN: env vars có sẵn
@@ -286,32 +310,83 @@ export default class MultiDatabaseMCPServer {
 • Chỉ định databaseAlias: chọn database cụ thể từ env vars
 
 ⚠️  CẢNH BÁO: AI KHÔNG ĐƯỢC tự ý thực hiện DML/DDL (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, etc.) - cần xin phép người dùng trước!`,
-      inputSchema: {
-        type: "object",
-        properties: {
-          type: {
-            type: "string",
-            enum: ["mysql", "mariadb", "postgresql", "sqlserver"],
-            description: "Database type (BẮT BUỘC)",
+        inputSchema: {
+          type: "object",
+          properties: {
+            type: {
+              type: "string",
+              enum: ["mysql", "mariadb", "postgresql", "sqlserver"],
+              description: "Database type (BẮT BUỘC)",
+            },
+            query: {
+              type: "string",
+              description: "SQL query",
+            },
+            databaseAlias: {
+              type: "string",
+              description:
+                "Alias của database (optional). Để trống sẽ dùng database mặc định. Các alias có sẵn sẽ được liệt kê nếu không tìm thấy database.",
+            },
+            connection: {
+              type: "object",
+              description:
+                "Connection config override (optional - sẽ override env vars)",
+            },
           },
-          query: {
-            type: "string",
-            description: "SQL query",
-          },
-          databaseAlias: {
-            type: "string",
-            description:
-              "Alias của database (optional). Để trống sẽ dùng database mặc định. Các alias có sẵn sẽ được liệt kê nếu không tìm thấy database.",
-          },
-          connection: {
-            type: "object",
-            description:
-              "Connection config override (optional - sẽ override env vars)",
-          },
+          required: ["type", "query"],
         },
-        required: ["type", "query"],
       },
-    };
+      {
+        name: "db_list_tables",
+        description: "Liệt kê tất cả các bảng trong database.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            type: {
+              type: "string",
+              enum: ["mysql", "mariadb", "postgresql", "sqlserver"],
+              description: "Database type (BẮT BUỘC)",
+            },
+            databaseAlias: {
+              type: "string",
+              description: "Alias của database (optional)",
+            },
+            connection: {
+              type: "object",
+              description: "Connection config override (optional)",
+            },
+          },
+          required: ["type"],
+        },
+      },
+      {
+        name: "db_describe_table",
+        description: "Xem cấu trúc chi tiết của bảng (cột, kiểu dữ liệu, index).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            type: {
+              type: "string",
+              enum: ["mysql", "mariadb", "postgresql", "sqlserver"],
+              description: "Database type (BẮT BUỘC)",
+            },
+            tableName: {
+              type: "string",
+              description: "Tên bảng cần xem chi tiết",
+            },
+            databaseAlias: {
+              type: "string",
+              description: "Alias của database (optional)",
+            },
+            connection: {
+              type: "object",
+              description: "Connection config override (optional)",
+            },
+          },
+          required: ["type", "tableName"],
+        },
+      },
+    ];
   }
 
   // Validate query request parameters
@@ -326,6 +401,18 @@ export default class MultiDatabaseMCPServer {
       throw new Error(`Database type không được hỗ trợ: ${type}`);
     }
 
+    return args;
+  }
+
+  validateCommonRequest(args) {
+    const { type } = args;
+    if (!type) {
+      throw new Error("type bắt buộc");
+    }
+    const supportedTypes = ["mysql", "mariadb", "postgresql", "sqlserver"];
+    if (!supportedTypes.includes(type)) {
+      throw new Error(`Database type không được hỗ trợ: ${type}`);
+    }
     return args;
   }
 
@@ -451,8 +538,9 @@ ${availableAliases
       }
 
       if (Array.isArray(res.results) && res.results.length === 0) {
+        // Return empty JSON array for no results
         return {
-          content: [{ type: "text", text: "Query không trả về record nào" }],
+          content: [{ type: "text", text: "[]" }],
         };
       }
 
@@ -476,24 +564,60 @@ ${availableAliases
 
   setupToolHandlers() {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: [this.createToolDefinition()],
+      tools: this.createToolDefinitions(),
     }));
 
     this.server.setRequestHandler(CallToolRequestSchema, async (req) => {
-      if (req.params.name !== "db_query") throw new Error("Tool không tồn tại");
-
       try {
-        const { type, query, databaseAlias, connection } =
-          this.validateQueryRequest(req.params.arguments);
+        const { name, arguments: args } = req.params;
 
-        const { cfg: baseCfg } = this.resolveDatabaseConnection(
-          type,
-          databaseAlias,
-          connection
-        );
-        const cfg = this.applyConnectionOverrides(baseCfg, type, connection);
+        if (name === "db_query") {
+          const { type, query, databaseAlias, connection } =
+            this.validateQueryRequest(args);
+          const { cfg: baseCfg } = this.resolveDatabaseConnection(
+            type,
+            databaseAlias,
+            connection
+          );
+          const cfg = this.applyConnectionOverrides(baseCfg, type, connection);
+          return await this.executeDatabaseQuery(type, cfg, query);
+        }
 
-        return await this.executeDatabaseQuery(type, cfg, query);
+        if (name === "db_list_tables") {
+          const { type, databaseAlias, connection } =
+            this.validateCommonRequest(args);
+          const { cfg: baseCfg } = this.resolveDatabaseConnection(
+            type,
+            databaseAlias,
+            connection
+          );
+          const cfg = this.applyConnectionOverrides(baseCfg, type, connection);
+          const db = await this.getConnection(type, cfg);
+          const tables = await db.listTables();
+          return {
+            content: [{ type: "text", text: JSON.stringify(tables, null, 2) }],
+          };
+        }
+
+        if (name === "db_describe_table") {
+          const { type, tableName, databaseAlias, connection } =
+            this.validateCommonRequest(args);
+          if (!tableName) throw new Error("tableName bắt buộc");
+          
+          const { cfg: baseCfg } = this.resolveDatabaseConnection(
+            type,
+            databaseAlias,
+            connection
+          );
+          const cfg = this.applyConnectionOverrides(baseCfg, type, connection);
+          const db = await this.getConnection(type, cfg);
+          const details = await db.describeTable(tableName);
+          return {
+            content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
+          };
+        }
+
+        throw new Error(`Tool không tồn tại: ${name}`);
       } catch (err) {
         return {
           content: [{ type: "text", text: `❌ ${err.message}` }],
