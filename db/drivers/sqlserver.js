@@ -1,34 +1,63 @@
-import sql from "mssql";
+import mssql from "mssql";
 import BaseDriver from "./BaseDriver.js";
 
 export default class SQLServerDriver extends BaseDriver {
+  constructor(config) {
+    super(config);
+    this.pool = null;
+  }
+
   async connect() {
-    // Check if connection exists and is still connected
-    if (this.connection && this.connection.connected) {
-      return this.connection;
+    // Check existing pool health
+    if (this.pool && this.pool.connected) {
+      return this.pool;
     }
 
-    // Close stale connection if exists
-    if (this.connection) {
+    // Close stale pool if exists
+    if (this.pool) {
       try {
-        await this.connection.close();
+        await this.pool.close();
       } catch (e) {
         // Ignore close errors
       }
+      this.pool = null;
     }
 
-    this.connection = await sql.connect(this.config);
+    // Configure pool settings
+    const poolConfig = {
+      ...this.config,
+      pool: {
+        max: 5,
+        min: 1,
+        idleTimeoutMillis: 30000,
+        acquireTimeoutMillis: 30000,
+      },
+      options: {
+        ...this.config.options,
+        // Connection stability options
+        connectTimeout: 30000,
+        requestTimeout: 30000,
+      },
+    };
+
+    this.pool = await mssql.connect(poolConfig);
+
+    // Handle pool errors
+    this.pool.on("error", (err) => {
+      console.error("[DB MCP] SQL Server Pool error:", err.message);
+    });
+
     console.error(
-      `[DB MCP] Đã kết nối SQL Server: ${
+      `[DB MCP] SQL Server Pool created: ${
         this.config.server || this.config.host
       }:${this.config.port}`
     );
-    return this.connection;
+    return this.pool;
   }
 
   async query(queryText) {
-    const conn = await this.connect();
-    const result = await conn.request().query(queryText);
+    const pool = await this.connect();
+    const result = await pool.request().query(queryText);
     return {
       results: result.recordset || [],
       fields: result.recordset ? result.recordset.columns : {},
@@ -55,7 +84,7 @@ export default class SQLServerDriver extends BaseDriver {
       WHERE TABLE_NAME = @tableName
       ORDER BY ORDINAL_POSITION;
     `;
-    
+
     const indexesSql = `
       SELECT 
         i.name AS index_name,
@@ -70,26 +99,37 @@ export default class SQLServerDriver extends BaseDriver {
       ORDER BY i.name, ic.key_ordinal;
     `;
 
-    const conn = await this.connect();
-    
-    const colsReq = conn.request();
-    colsReq.input('tableName', sql.NVarChar, tableName);
+    const pool = await this.connect();
+
+    const colsReq = pool.request();
+    colsReq.input("tableName", mssql.NVarChar, tableName);
     const colsResult = await colsReq.query(columnsSql);
 
-    const idxReq = conn.request();
-    idxReq.input('tableName', sql.NVarChar, tableName);
+    const idxReq = pool.request();
+    idxReq.input("tableName", mssql.NVarChar, tableName);
     const idxResult = await idxReq.query(indexesSql);
 
     return {
       columns: colsResult.recordset,
-      indexes: idxResult.recordset
+      indexes: idxResult.recordset,
     };
   }
 
+  async healthCheck() {
+    try {
+      const pool = await this.connect();
+      await pool.request().query("SELECT 1");
+      return true;
+    } catch (e) {
+      console.error("[DB MCP] SQL Server health check failed:", e.message);
+      return false;
+    }
+  }
+
   async close() {
-    if (!this.connection) return;
-    await this.connection.close();
-    this.connection = null;
-    console.error("[DB MCP] Đã đóng kết nối SQL Server");
+    if (!this.pool) return;
+    await this.pool.close();
+    this.pool = null;
+    console.error("[DB MCP] SQL Server Pool closed");
   }
 }

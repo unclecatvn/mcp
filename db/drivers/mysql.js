@@ -2,62 +2,83 @@ import mysql from "mysql2/promise";
 import BaseDriver from "./BaseDriver.js";
 
 export default class MySQLDriver extends BaseDriver {
+  constructor(config) {
+    super(config);
+    this.pool = null;
+  }
+
   async connect() {
-    // Check if connection exists and is still connected
-    if (this.connection && this.connection.threadId) {
-      return this.connection;
+    // Sử dụng connection pool thay vì single connection
+    if (!this.pool) {
+      this.pool = mysql.createPool({
+        ...this.config,
+        multipleStatements: false,
+        timezone: "Z",
+        // Pool configuration để giữ connection alive
+        waitForConnections: true,
+        connectionLimit: 5,
+        queueLimit: 0,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 10000, // 10 seconds
+        // Auto reconnect khi connection bị timeout
+        idleTimeout: 60000, // 60 seconds
+      });
+
+      console.error(
+        `[DB MCP] MySQL Pool created: ${this.config.host}:${this.config.port}`
+      );
     }
 
-    // Close stale connection if exists
-    if (this.connection) {
-      try {
-        await this.connection.end();
-      } catch (e) {
-        // Ignore close errors
-      }
-    }
+    return this.pool;
+  }
 
-    this.connection = await mysql.createConnection({
-      ...this.config,
-      multipleStatements: false,
-      timezone: "Z",
-    });
-    console.error(
-      `[DB MCP] Đã kết nối MySQL: ${this.config.host}:${this.config.port}`
-    );
-    return this.connection;
+  async getConnection() {
+    const pool = await this.connect();
+    return pool.getConnection();
   }
 
   async query(queryText) {
-    const conn = await this.connect();
-    const [results, fields] = await conn.execute(queryText);
+    const pool = await this.connect();
+
+    // Pool tự động handle reconnect khi connection bị stale
+    const [results, fields] = await pool.execute(queryText);
     return { results, fields, type: "mysql" };
   }
 
   async listTables() {
     const sql = "SHOW TABLES";
     const { results } = await this.query(sql);
-    // results is array of objects like { 'Tables_in_dbname': 'tablename' }
-    return results.map(row => Object.values(row)[0]);
+    return results.map((row) => Object.values(row)[0]);
   }
 
   async describeTable(tableName) {
-    const conn = await this.connect();
-    
+    const pool = await this.connect();
+
     // Use parameterized queries to prevent injection
-    const [columns] = await conn.query(`DESCRIBE ??`, [tableName]);
-    const [indexes] = await conn.query(`SHOW INDEX FROM ??`, [tableName]);
+    const [columns] = await pool.query(`DESCRIBE ??`, [tableName]);
+    const [indexes] = await pool.query(`SHOW INDEX FROM ??`, [tableName]);
 
     return {
       columns,
-      indexes
+      indexes,
     };
   }
 
+  async healthCheck() {
+    try {
+      const pool = await this.connect();
+      await pool.query("SELECT 1");
+      return true;
+    } catch (e) {
+      console.error("[DB MCP] MySQL health check failed:", e.message);
+      return false;
+    }
+  }
+
   async close() {
-    if (!this.connection) return;
-    await this.connection.end();
-    this.connection = null;
-    console.error("[DB MCP] Đã đóng kết nối MySQL");
+    if (!this.pool) return;
+    await this.pool.end();
+    this.pool = null;
+    console.error("[DB MCP] MySQL Pool closed");
   }
 }
