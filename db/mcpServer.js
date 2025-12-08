@@ -280,32 +280,6 @@ export default class MultiDatabaseMCPServer {
     return Object.keys(connections);
   }
 
-  isDMLDDLQuery(query) {
-    const normalizedQuery = query.trim().toUpperCase();
-    const dmlDdlKeywords = [
-      "INSERT",
-      "UPDATE",
-      "DELETE",
-      "MERGE",
-      "CREATE",
-      "ALTER",
-      "DROP",
-      "TRUNCATE",
-      "RENAME",
-      "GRANT",
-      "REVOKE",
-      "COMMIT",
-      "ROLLBACK",
-    ];
-
-    const pattern = new RegExp(
-      `(^|[;\\n\\r]+)\\s*(${dmlDdlKeywords.join("|")})\\b`,
-      "i"
-    );
-
-    return pattern.test(normalizedQuery);
-  }
-
   createToolDefinitions() {
     return [
       {
@@ -317,9 +291,7 @@ export default class MultiDatabaseMCPServer {
 
 📋 CÁCH SỬ DỤNG:
 • Không chỉ định databaseAlias: sử dụng database mặc định
-• Chỉ định databaseAlias: chọn database cụ thể từ env vars
-
-⚠️  CẢNH BÁO: AI KHÔNG ĐƯỢC tự ý thực hiện DML/DDL (INSERT, UPDATE, DELETE, CREATE, ALTER, DROP, etc.) - cần xin phép người dùng trước!`,
+• Chỉ định databaseAlias: chọn database cụ thể từ env vars`,
         inputSchema: {
           type: "object",
           properties: {
@@ -568,18 +540,6 @@ ${availableAliases
   }
 
   async executeDatabaseQuery(type, cfg, query) {
-    if (this.isDMLDDLQuery(query)) {
-      const warningMsg = `⚠️  DML/DDL DETECTED: ${query.trim().split("\n")[0]}
-
-❌ AI không được tự ý thực hiện thao tác này
-✅ Cần xin phép người dùng trước khi tiếp tục`;
-
-      return {
-        content: [{ type: "text", text: warningMsg }],
-        isError: true,
-      };
-    }
-
     const safeLog = query.replace(
       /password\s*=\s*['"][^'"]*['"]/gi,
       "password='***'"
