@@ -1,8 +1,8 @@
 # MCP Servers Collection
 
-Repository chứa các MCP (Model Context Protocol) Servers tự xây dựng để sử dụng với các AI Coding Assistants như Cursor, Windsurf, Claude Desktop, v.v.
+A collection of custom-built MCP (Model Context Protocol) Servers for use with AI Coding Assistants like Cursor, Windsurf, Claude Desktop, etc.
 
-## 📁 Cấu trúc
+## 📁 Structure
 
 ```
 mcp/
@@ -11,23 +11,31 @@ mcp/
 
 ## 🗄️ Database MCP Server (`db/`)
 
-MCP Server hỗ trợ kết nối và thực thi SQL query trên nhiều loại database:
+An MCP Server that supports connecting and executing SQL queries on multiple database types:
 
 - **MySQL/MariaDB**
 - **PostgreSQL** 
 - **SQL Server**
 
-### Tính năng chính
+### Key Features
 
-- ✅ Hỗ trợ nhiều database instances cùng lúc với alias
-- ✅ Kết nối qua connection string hoặc individual parameters
-- ✅ Cấu hình qua environment variables
-- ✅ Connection pooling hiệu quả
-- ✅ Xử lý lỗi chi tiết theo từng database type
+- ✅ Support multiple database instances simultaneously with aliases
+- ✅ Connect via connection string or individual parameters
+- ✅ Configuration through environment variables
+- ✅ Efficient connection pooling
+- ✅ Detailed error handling per database type
 
-### Cài đặt & Sử dụng
+### Installation & Usage
 
-Xem chi tiết tại [db/README.md](./db/README.md)
+See details at [db/README.md](./db/README.md)
+
+## 👤 Author
+
+**UncleCat** - [@unclecatvn](https://github.com/unclecatvn)
+
+## ⭐ Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=unclecatvn/mcp&type=Date)](https://star-history.com/#unclecatvn/mcp&Date)
 
 ## 📝 License
 
