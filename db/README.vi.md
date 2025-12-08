@@ -1,68 +1,68 @@
 # Multi-Database MCP Server
 
-MCP Server supporting multiple database types: MySQL/MariaDB, PostgreSQL, and SQL Server.
+MCP Server hỗ trợ nhiều loại database: MySQL/MariaDB, PostgreSQL, và SQL Server.
 
-[🇻🇳 Tiếng Việt](./README.vi.md)
+[🇬🇧 English](./README.md)
 
-## 🎯 Features
+## 🎯 Tính năng
 
 - **Multi-Database Support**: MySQL/MariaDB, PostgreSQL, SQL Server
-- **Multiple Database Instances**: Support multiple databases of the same type with aliases
-- **Flexible Connection**: Connection string or individual parameters
-- **Environment Variables**: Configuration via env vars
-- **Error Handling**: Detailed error handling per database type
-- **Connection Pooling**: Efficient connection reuse
-- **Auto Retry**: Automatic retry with exponential backoff on connection errors (3 retries)
+- **Multiple Database Instances**: Hỗ trợ nhiều database cùng loại với alias
+- **Flexible Connection**: Connection string hoặc individual parameters
+- **Environment Variables**: Hỗ trợ config qua env vars
+- **Error Handling**: Xử lý lỗi chi tiết theo từng database type
+- **Connection Pooling**: Tái sử dụng kết nối hiệu quả
+- **Auto Retry**: Tự động retry với exponential backoff khi lỗi kết nối (3 lần retry)
 
-## 📦 Installation
+## 📦 Cài đặt
 
 ```bash
 pnpm install
-# or
+# hoặc
 npm install
 ```
 
-## ⚙️ Configuration
+## ⚙️ Cấu hình
 
 ### Environment Variables
 
-#### Method 1: Multiple Databases with Connection Strings (Recommended)
+#### Phương pháp 1: Multiple Databases với Connection Strings (Khuyến nghị)
 
 ```bash
-# Multiple MySQL databases with aliases
+# Nhiều database MySQL với alias
 MYSQL_CONNECTIONS="prod=mysql://user:pass@prod-host:3306/prod_db;dev=mysql://user:pass@dev-host:3306/dev_db;test=mysql://user:pass@localhost:3306/test_db"
 
-# Multiple PostgreSQL databases
+# Nhiều database PostgreSQL
 POSTGRESQL_CONNECTIONS="main=postgresql://user:pass@host1:5432/main_db;analytics=postgresql://user:pass@host2:5432/analytics_db"
 
-# Multiple SQL Server databases
+# Nhiều database SQL Server
 SQLSERVER_CONNECTIONS="primary=sqlserver://user:pass@server1:1433/primary_db;secondary=sqlserver://user:pass@server2:1433/secondary_db"
 ```
 
-#### Method 2: Multiple Databases with Individual Variables
+#### Phương pháp 2: Multiple Databases với Individual Variables
 
 ```bash
-# First MySQL database
+# Database MySQL đầu tiên
 MYSQL_DB1_HOST=host1
 MYSQL_DB1_PORT=3306
 MYSQL_DB1_USER=user1
 MYSQL_DB1_PASSWORD=pass1
 MYSQL_DB1_DATABASE=db1
 
-# Second MySQL database
+# Database MySQL thứ hai
 MYSQL_DB2_HOST=host2
 MYSQL_DB2_PORT=3306
 MYSQL_DB2_USER=user2
 MYSQL_DB2_PASSWORD=pass2
 MYSQL_DB2_DATABASE=db2
 
-# Similar for PostgreSQL and SQL Server
+# Tương tự cho PostgreSQL và SQL Server
 POSTGRESQL_DB1_HOST=host1
 POSTGRESQL_DB1_DATABASE=db1
 # ...
 ```
 
-#### Method 3: Single Database (Backward Compatibility)
+#### Phương pháp 3: Single Database (Backward Compatibility)
 
 ```bash
 # MySQL/MariaDB
@@ -89,7 +89,7 @@ SQLSERVER_DATABASE=mydatabase
 
 ### Cursor MCP Configuration
 
-Add config to `~/.cursor/mcp.json`:
+Thêm config vào file `~/.cursor/mcp.json`:
 
 ```json
 {
@@ -118,38 +118,38 @@ Add config to `~/.cursor/mcp.json`:
 }
 ```
 
-**Notes:**
+**Lưu ý:**
 
-- Replace `/path/to/your/db/index.js` with the actual path to index.js
-- Only configure env vars for the database types you use
-- Restart Cursor after changing config
+- Thay `/path/to/your/db/index.js` bằng đường dẫn thực tế đến file index.js
+- Chỉ cần config env vars cho database types mà bạn sử dụng
+- Restart Cursor sau khi thay đổi config
 
-## 🚀 Usage
+## 🚀 Sử dụng
 
 ### Tool: `db_query`
 
-Execute SQL queries on the database.
+Thực thi SQL query trên database.
 
 **Parameters:**
 
-- `type` (required): Database type (`mysql`, `mariadb`, `postgresql`, `sqlserver`)
-- `query` (required): SQL query to execute
-- `databaseAlias` (optional): Database alias to use (if multiple databases configured)
-- `connection` (optional): Database connection info (override env vars)
+- `type` (required): Loại database (`mysql`, `mariadb`, `postgresql`, `sqlserver`)
+- `query` (required): SQL query để thực thi
+- `databaseAlias` (optional): Alias của database để sử dụng (nếu có nhiều database được cấu hình)
+- `connection` (optional): Thông tin kết nối database (override env vars)
 
 ---
 
 ### Tool: `db_list_tables`
 
-List all tables in the database.
+Liệt kê tất cả các bảng trong database.
 
 **Parameters:**
 
-- `type` (required): Database type (`mysql`, `mariadb`, `postgresql`, `sqlserver`)
-- `databaseAlias` (optional): Database alias to use
-- `connection` (optional): Database connection info (override env vars)
+- `type` (required): Loại database (`mysql`, `mariadb`, `postgresql`, `sqlserver`)
+- `databaseAlias` (optional): Alias của database để sử dụng
+- `connection` (optional): Thông tin kết nối database (override env vars)
 
-**Example:**
+**Ví dụ:**
 
 ```json
 {
@@ -162,16 +162,16 @@ List all tables in the database.
 
 ### Tool: `db_describe_table`
 
-View detailed table structure (columns, data types, indexes).
+Xem cấu trúc chi tiết của bảng (cột, kiểu dữ liệu, index).
 
 **Parameters:**
 
-- `type` (required): Database type (`mysql`, `mariadb`, `postgresql`, `sqlserver`)
-- `tableName` (required): Name of the table to describe
-- `databaseAlias` (optional): Database alias to use
-- `connection` (optional): Database connection info (override env vars)
+- `type` (required): Loại database (`mysql`, `mariadb`, `postgresql`, `sqlserver`)
+- `tableName` (required): Tên bảng cần xem chi tiết
+- `databaseAlias` (optional): Alias của database để sử dụng
+- `connection` (optional): Thông tin kết nối database (override env vars)
 
-**Example:**
+**Ví dụ:**
 
 ```json
 {
@@ -183,9 +183,9 @@ View detailed table structure (columns, data types, indexes).
 
 ---
 
-### 📝 db_query Examples
+### 📝 Ví dụ db_query
 
-#### 1. Using Connection String
+#### 1. Sử dụng với Connection String
 
 ```json
 {
@@ -197,7 +197,7 @@ View detailed table structure (columns, data types, indexes).
 }
 ```
 
-#### 2. Using Individual Parameters
+#### 2. Sử dụng với Individual Parameters
 
 ```json
 {
@@ -213,7 +213,7 @@ View detailed table structure (columns, data types, indexes).
 }
 ```
 
-#### 3. Using Environment Variables (Default Database)
+#### 3. Sử dụng với Environment Variables (Database mặc định)
 
 ```json
 {
@@ -222,7 +222,7 @@ View detailed table structure (columns, data types, indexes).
 }
 ```
 
-#### 4. Using Multiple Databases (specify databaseAlias)
+#### 4. Sử dụng với Multiple Databases (chỉ định databaseAlias)
 
 ```json
 {
@@ -232,7 +232,7 @@ View detailed table structure (columns, data types, indexes).
 }
 ```
 
-#### 5. Override connection with individual parameters
+#### 5. Override connection với individual parameters
 
 ```json
 {
@@ -250,13 +250,13 @@ View detailed table structure (columns, data types, indexes).
 ### MySQL/MariaDB
 
 ```sql
--- Show databases
+-- Hiển thị databases
 SHOW DATABASES;
 
--- Select database
+-- Chọn database
 USE mydatabase;
 
--- Show tables
+-- Hiển thị tables
 SHOW TABLES;
 
 -- Describe table
@@ -266,28 +266,28 @@ DESCRIBE table_name;
 ### PostgreSQL
 
 ```sql
--- Show databases
+-- Hiển thị databases
 SELECT datname FROM pg_database;
 
--- Show tables
+-- Hiển thị tables
 SELECT * FROM information_schema.tables;
 
 -- Describe table
 \d table_name
--- or
+-- hoặc
 SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'table_name';
 ```
 
 ### SQL Server
 
 ```sql
--- Show databases
+-- Hiển thị databases
 SELECT name FROM sys.databases;
 
--- Use database
+-- Sử dụng database
 USE [mydatabase];
 
--- Show tables
+-- Hiển thị tables
 SELECT * FROM sys.tables;
 
 -- Describe table
@@ -301,28 +301,28 @@ SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME =
 - **PostgreSQL**: `postgresql://user:pass@host:port/database`
 - **SQL Server**: `sqlserver://user:pass@host:port/database`
 
-## 🚨 Important Notes
+## 🚨 Lưu ý quan trọng
 
-1. **USE Statement**: Only applies to MySQL/MariaDB
-2. **SQL Syntax**: Each database has different syntax
-3. **Connection Security**: Always use strong passwords and secure connections
-4. **Error Handling**: Server returns detailed errors per database type
+1. **USE Statement**: Chỉ áp dụng cho MySQL/MariaDB
+2. **SQL Syntax**: Mỗi database có syntax khác nhau
+3. **Connection Security**: Luôn sử dụng strong passwords và secure connections
+4. **Error Handling**: Server sẽ trả về lỗi chi tiết theo từng database type
 
 ## 🔍 Troubleshooting
 
 ### MySQL/MariaDB
 
-- `ER_NO_DB_ERROR`: Use `USE database_name;` or specify database in connection
-- `ER_BAD_DB_ERROR`: Database doesn't exist, check with `SHOW DATABASES;`
+- `ER_NO_DB_ERROR`: Sử dụng `USE database_name;` hoặc specify database trong connection
+- `ER_BAD_DB_ERROR`: Database không tồn tại, kiểm tra với `SHOW DATABASES;`
 
 ### PostgreSQL
 
-- `3D000`: Database doesn't exist
-- `42P01`: Table doesn't exist
+- `3D000`: Database không tồn tại
+- `42P01`: Table không tồn tại
 
 ### SQL Server
 
-- `Invalid object name`: Object doesn't exist, check with `SELECT * FROM sys.tables;`
+- `Invalid object name`: Object không tồn tại, kiểm tra với `SELECT * FROM sys.tables;`
 
 ## 📊 Response Format
 
@@ -356,10 +356,10 @@ SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME =
 }
 ```
 
-## 🏃 Run Server
+## 🏃 Chạy Server
 
 ```bash
 pnpm start
-# or
+# hoặc
 node index.js
 ```
