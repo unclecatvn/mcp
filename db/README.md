@@ -1,6 +1,6 @@
-# Multi-Database MCP Server
+# MCP Database Server
 
-MCP Server supporting multiple database types: MySQL/MariaDB, PostgreSQL, and SQL Server.
+Multi-Database MCP Server with intelligent query analysis and AI-assisted optimization for MySQL/MariaDB, PostgreSQL, and SQL Server.
 
 [🇻🇳 Tiếng Việt](./README.vi.md)
 
@@ -10,27 +10,38 @@ MCP Server supporting multiple database types: MySQL/MariaDB, PostgreSQL, and SQ
 - **Multiple Database Instances**: Support multiple databases of the same type with aliases
 - **Flexible Connection**: Connection string or individual parameters
 - **Environment Variables**: Configuration via env vars
-- **Error Handling**: Detailed error handling per database type
 - **Connection Pooling**: Efficient connection reuse
-- **Auto Retry**: Automatic retry with exponential backoff on connection errors (3 retries)
+- **Auto Retry**: Automatic retry with exponential backoff (3 retries)
+- **AI-Powered Analysis**: Query optimization suggestions and anti-pattern detection
+- **Execution Plans**: EXPLAIN support for all database types
+- **Query History**: Track recent queries with performance metrics
+
+## 🛠️ MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `db_query` | Execute SQL with performance tracking and metadata |
+| `db_analyze_query` | AI-powered query analysis and optimization suggestions |
+| `db_explain_query` | Get execution plan to analyze query performance |
+| `db_list_tables` | List all tables in database |
+| `db_describe_table` | Get table structure (columns, indexes, constraints) |
+| `db_query_history` | Review recent queries with performance metrics |
 
 ## 📦 Installation
 
 ```bash
-pnpm install
-# or
 npm install
+# or
+pnpm install
 ```
 
 ## ⚙️ Configuration
 
-### Environment Variables
-
-#### Method 1: Multiple Databases with Connection Strings (Recommended)
+### Method 1: Multiple Databases with Connection Strings (Recommended)
 
 ```bash
 # Multiple MySQL databases with aliases
-MYSQL_CONNECTIONS="prod=mysql://user:pass@prod-host:3306/prod_db;dev=mysql://user:pass@dev-host:3306/dev_db;test=mysql://user:pass@localhost:3306/test_db"
+MYSQL_CONNECTIONS="prod=mysql://user:pass@prod-host:3306/prod_db;dev=mysql://user:pass@dev-host:3306/dev_db"
 
 # Multiple PostgreSQL databases
 POSTGRESQL_CONNECTIONS="main=postgresql://user:pass@host1:5432/main_db;analytics=postgresql://user:pass@host2:5432/analytics_db"
@@ -39,17 +50,17 @@ POSTGRESQL_CONNECTIONS="main=postgresql://user:pass@host1:5432/main_db;analytics
 SQLSERVER_CONNECTIONS="primary=sqlserver://user:pass@server1:1433/primary_db;secondary=sqlserver://user:pass@server2:1433/secondary_db"
 ```
 
-#### Method 2: Multiple Databases with Individual Variables
+### Method 2: Multiple Databases with Individual Variables
 
 ```bash
-# First MySQL database
+# First MySQL database → alias: db1
 MYSQL_DB1_HOST=host1
 MYSQL_DB1_PORT=3306
 MYSQL_DB1_USER=user1
 MYSQL_DB1_PASSWORD=pass1
 MYSQL_DB1_DATABASE=db1
 
-# Second MySQL database
+# Second MySQL database → alias: db2
 MYSQL_DB2_HOST=host2
 MYSQL_DB2_PORT=3306
 MYSQL_DB2_USER=user2
@@ -59,10 +70,9 @@ MYSQL_DB2_DATABASE=db2
 # Similar for PostgreSQL and SQL Server
 POSTGRESQL_DB1_HOST=host1
 POSTGRESQL_DB1_DATABASE=db1
-# ...
 ```
 
-#### Method 3: Single Database (Backward Compatibility)
+### Method 3: Single Database (Backward Compatibility)
 
 ```bash
 # MySQL/MariaDB
@@ -87,7 +97,7 @@ SQLSERVER_PASSWORD=yourpassword
 SQLSERVER_DATABASE=mydatabase
 ```
 
-### Cursor MCP Configuration
+## 🔧 Cursor MCP Configuration
 
 Add config to `~/.cursor/mcp.json`:
 
@@ -96,22 +106,19 @@ Add config to `~/.cursor/mcp.json`:
   "mcpServers": {
     "db": {
       "command": "node",
-      "args": ["/path/to/your/db/index.js"],
+      "args": ["/path/to/mcp/db/index.js"],
       "env": {
-        "MYSQL_HOST": "localhost",
-        "MYSQL_USER": "root",
-        "MYSQL_PASSWORD": "yourpassword",
-        "MYSQL_DATABASE": "mydatabase",
+        "MYSQL_DB1_HOST": "localhost",
+        "MYSQL_DB1_PORT": "3306",
+        "MYSQL_DB1_USER": "root",
+        "MYSQL_DB1_PASSWORD": "yourpassword",
+        "MYSQL_DB1_DATABASE": "mydatabase",
 
-        "POSTGRESQL_HOST": "localhost",
-        "POSTGRESQL_USER": "postgres",
-        "POSTGRESQL_PASSWORD": "yourpassword",
-        "POSTGRESQL_DATABASE": "mydatabase",
-
-        "SQLSERVER_SERVER": "localhost",
-        "SQLSERVER_USER": "sa",
-        "SQLSERVER_PASSWORD": "yourpassword",
-        "SQLSERVER_DATABASE": "mydatabase"
+        "POSTGRESQL_DB1_HOST": "localhost",
+        "POSTGRESQL_DB1_PORT": "5432",
+        "POSTGRESQL_DB1_USER": "postgres",
+        "POSTGRESQL_DB1_PASSWORD": "yourpassword",
+        "POSTGRESQL_DB1_DATABASE": "mydatabase"
       }
     }
   }
@@ -119,23 +126,63 @@ Add config to `~/.cursor/mcp.json`:
 ```
 
 **Notes:**
-
-- Replace `/path/to/your/db/index.js` with the actual path to index.js
-- Only configure env vars for the database types you use
+- Replace `/path/to/mcp/db/index.js` with the actual path
+- Database aliases: `MYSQL_DB1_*` → `db1`, `MYSQL_DB2_*` → `db2`, etc.
 - Restart Cursor after changing config
 
 ## 🚀 Usage
 
+### Recommended AI Workflow
+
+```
+1. Understand schema → db_describe_table
+2. Analyze query   → db_analyze_query
+3. Check execution plan → db_explain_query
+4. Execute query    → db_query
+5. Review history    → db_query_history
+```
+
 ### Tool: `db_query`
 
-Execute SQL queries on the database.
+Execute SQL queries with performance tracking.
 
 **Parameters:**
-
 - `type` (required): Database type (`mysql`, `mariadb`, `postgresql`, `sqlserver`)
 - `query` (required): SQL query to execute
-- `databaseAlias` (optional): Database alias to use (if multiple databases configured)
-- `connection` (optional): Database connection info (override env vars)
+- `databaseAlias` (optional): Database alias (`db1`, `db2`, etc.)
+- `connection` (optional): Override connection config
+
+**Response:** Results + execution metadata (time, rows, tables)
+
+---
+
+### Tool: `db_analyze_query`
+
+AI-powered query analysis with optimization suggestions.
+
+**Parameters:**
+- `type` (required): Database type
+- `query` (required): SQL query to analyze
+
+**Detects:**
+- Query type (SELECT/INSERT/UPDATE/DELETE/DDL)
+- Anti-patterns (SELECT *, wildcards, missing indexes)
+- Database-specific issues
+- Function usage
+
+**Returns:** Optimization suggestions and best practices
+
+---
+
+### Tool: `db_explain_query`
+
+Get execution plan to analyze query performance.
+
+**Parameters:**
+- `type` (required): Database type
+- `query` (required): SQL query to explain
+- `databaseAlias` (optional): Database alias
+- `connection` (optional): Override connection config
 
 ---
 
@@ -143,223 +190,124 @@ Execute SQL queries on the database.
 
 List all tables in the database.
 
-**Parameters:**
-
-- `type` (required): Database type (`mysql`, `mariadb`, `postgresql`, `sqlserver`)
-- `databaseAlias` (optional): Database alias to use
-- `connection` (optional): Database connection info (override env vars)
-
-**Example:**
-
-```json
-{
-  "type": "mysql",
-  "databaseAlias": "prod"
-}
-```
-
 ---
 
 ### Tool: `db_describe_table`
 
-View detailed table structure (columns, data types, indexes).
-
-**Parameters:**
-
-- `type` (required): Database type (`mysql`, `mariadb`, `postgresql`, `sqlserver`)
-- `tableName` (required): Name of the table to describe
-- `databaseAlias` (optional): Database alias to use
-- `connection` (optional): Database connection info (override env vars)
-
-**Example:**
-
-```json
-{
-  "type": "postgresql",
-  "tableName": "users",
-  "databaseAlias": "main"
-}
-```
+Get detailed table structure (columns, data types, indexes, constraints).
 
 ---
 
-### 📝 db_query Examples
+### Tool: `db_query_history`
 
-#### 1. Using Connection String
+Get recent query execution history with performance metrics.
 
-```json
-{
-  "type": "mysql",
-  "query": "SHOW DATABASES;",
-  "connection": {
-    "connectionString": "mysql://user:pass@localhost:3306/mydatabase"
-  }
-}
-```
+---
 
-#### 2. Using Individual Parameters
+## 📝 Usage Examples
 
-```json
-{
-  "type": "postgresql",
-  "query": "SELECT * FROM pg_tables;",
-  "connection": {
-    "host": "localhost",
-    "port": 5432,
-    "user": "postgres",
-    "password": "yourpassword",
-    "database": "mydatabase"
-  }
-}
-```
-
-#### 3. Using Environment Variables (Default Database)
-
-```json
-{
-  "type": "sqlserver",
-  "query": "SELECT * FROM sys.tables;"
-}
-```
-
-#### 4. Using Multiple Databases (specify databaseAlias)
+### 1. Analyze Before Execution
 
 ```json
 {
   "type": "mysql",
-  "query": "SELECT * FROM users LIMIT 10;",
-  "databaseAlias": "prod"
+  "query": "SELECT * FROM users WHERE name LIKE '%john%'"
 }
 ```
 
-#### 5. Override connection with individual parameters
+### 2. Check Execution Plan
 
 ```json
 {
   "type": "postgresql",
-  "query": "SELECT * FROM analytics_data;",
-  "databaseAlias": "analytics",
-  "connection": {
-    "password": "override_password"
-  }
+  "query": "SELECT * FROM orders JOIN users ON orders.user_id = users.id"
 }
 ```
 
-## 🔧 Database-Specific Commands
+### 3. Execute with Metadata
+
+```json
+{
+  "type": "mysql",
+  "databaseAlias": "db1",
+  "query": "SELECT id, name FROM users LIMIT 10"
+}
+```
+
+## 🎯 Database-Specific Guidance
 
 ### MySQL/MariaDB
-
-```sql
--- Show databases
-SHOW DATABASES;
-
--- Select database
-USE mydatabase;
-
--- Show tables
-SHOW TABLES;
-
--- Describe table
-DESCRIBE table_name;
-```
+- Limit: `LIMIT offset, count`
+- Index hints: `USE INDEX (index_name)` or `FORCE INDEX`
+- Watch for: filesort, temporary tables
 
 ### PostgreSQL
-
-```sql
--- Show databases
-SELECT datname FROM pg_database;
-
--- Show tables
-SELECT * FROM information_schema.tables;
-
--- Describe table
-\d table_name
--- or
-SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'table_name';
-```
+- Limit: `LIMIT count OFFSET offset`
+- For pagination >1000: Use keyset/cursor pagination
+- EXPLAIN: `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`
 
 ### SQL Server
+- Limit: `OFFSET offset ROWS FETCH NEXT count ROWS ONLY`
+- Always use ORDER BY with TOP
+- Avoid NOLOCK (use READ COMMITTED SNAPSHOT instead)
 
-```sql
--- Show databases
-SELECT name FROM sys.databases;
+## 📌 Common Anti-Patterns Detected
 
--- Use database
-USE [mydatabase];
-
--- Show tables
-SELECT * FROM sys.tables;
-
--- Describe table
-SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'table_name';
-```
-
-## 🎯 Connection String Format
-
-- **MySQL**: `mysql://user:pass@host:port/database`
-- **MariaDB**: `mariadb://user:pass@host:port/database`
-- **PostgreSQL**: `postgresql://user:pass@host:port/database`
-- **SQL Server**: `sqlserver://user:pass@host:port/database`
-
-## 🚨 Important Notes
-
-1. **USE Statement**: Only applies to MySQL/MariaDB
-2. **SQL Syntax**: Each database has different syntax
-3. **Connection Security**: Always use strong passwords and secure connections
-4. **Error Handling**: Server returns detailed errors per database type
-
-## 🔍 Troubleshooting
-
-### MySQL/MariaDB
-
-- `ER_NO_DB_ERROR`: Use `USE database_name;` or specify database in connection
-- `ER_BAD_DB_ERROR`: Database doesn't exist, check with `SHOW DATABASES;`
-
-### PostgreSQL
-
-- `3D000`: Database doesn't exist
-- `42P01`: Table doesn't exist
-
-### SQL Server
-
-- `Invalid object name`: Object doesn't exist, check with `SELECT * FROM sys.tables;`
+| Pattern | Issue | Fix |
+|---------|-------|-----|
+| `SELECT *` | Retrieves all columns | Specify columns |
+| `LIKE '%value'` | No index usage | Full-text search, pg_trgm |
+| `DELETE/UPDATE` no WHERE | Dangerous | Always add WHERE |
+| `OR col=x OR col=y` | Inefficient | Use `IN` clause |
+| `NOT IN` | Slow on large datasets | Use `NOT EXISTS` |
+| High OFFSET (>1000) | Slow pagination | Use keyset pagination |
 
 ## 📊 Response Format
 
-### SELECT Queries
+All `db_query` responses include:
 
 ```json
 {
-  "type": "select",
-  "databaseType": "mysql",
-  "host": "localhost",
-  "port": 3306,
-  "database": "mydatabase",
-  "rowCount": 10,
-  "data": [...],
-  "fields": [...]
+  "content": [
+    { "type": "text", "text": "[Query Results]" },
+    { "type": "text", "text": "--- Query Metadata ---\nDatabase: mysql @ host:3306/db\nQuery Type: SELECT\nExecution Time: 45ms\nRows Returned: 10\nTables: users" }
+  ],
+  "_metadata": {
+    "databaseType": "mysql",
+    "executionTime": 45,
+    "success": true,
+    "rowCount": 10
+  }
 }
 ```
 
-### Modification Queries
+## 🔧 Troubleshooting
 
-```json
-{
-  "type": "modification",
-  "databaseType": "postgresql",
-  "host": "localhost",
-  "port": 5432,
-  "database": "mydatabase",
-  "affectedRows": 1,
-  "insertId": null,
-  "message": "Query executed successfully"
-}
-```
+### MySQL/MariaDB
+- `ER_NO_DB_ERROR`: Specify database in connection or use `USE database;`
+- `ER_BAD_DB_ERROR`: Check with `SHOW DATABASES;`
+
+### PostgreSQL
+- `3D000`: Database doesn't exist
+- `42P01`: Table doesn't exist
+- High OFFSET inefficient → Use keyset pagination
+
+### SQL Server
+- `Invalid object name`: Check with `SELECT * FROM sys.tables;`
+- TOP without ORDER BY → Non-deterministic results
 
 ## 🏃 Run Server
 
 ```bash
-pnpm start
+npm start
 # or
 node index.js
 ```
+
+## 📝 License
+
+MIT
+
+## 👤 Author
+
+**UncleCat** - [@unclecatvn](https://github.com/unclecatvn)

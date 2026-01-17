@@ -1,8 +1,9 @@
 {
   "name": "@mcp/database",
-  "version": "1.0.0",
-  "description": "MCP Server hỗ trợ multi-database - MySQL/MariaDB, PostgreSQL, SQL Server",
+  "version": "1.1.0",
+  "description": "MCP Server supporting multi-database - MySQL/MariaDB, PostgreSQL, SQL Server with intelligent query analysis",
   "main": "index.js",
+  "types": "index.d.ts",
   "type": "module",
   "scripts": {
     "start": "node index.js",
