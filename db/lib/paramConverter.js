@@ -127,7 +127,7 @@ export function convertParams(sql, params, dialect) {
     if (c === "?") {
       if (!isPositional) {
         throw new ValidationError(
-          "SQL contains positional ? placeholders but params is not an array."
+          "SQL contains positional ? placeholders but params is not an array.",
         );
       }
       out += emitForPositional();
@@ -139,12 +139,12 @@ export function convertParams(sql, params, dialect) {
       if (m) {
         if (!isNamed) {
           throw new ValidationError(
-            `SQL contains named placeholder :${m[1]} but params is not an object.`
+            `SQL contains named placeholder :${m[1]} but params is not an object.`,
           );
         }
         if (!Object.prototype.hasOwnProperty.call(params, m[1])) {
           throw new ValidationError(
-            `SQL references named placeholder :${m[1]} but params has no key '${m[1]}'.`
+            `SQL references named placeholder :${m[1]} but params has no key '${m[1]}'.`,
           );
         }
         out += emitForNamed(m[1]);
@@ -159,7 +159,7 @@ export function convertParams(sql, params, dialect) {
   if (isPositional) {
     if (params.length !== posIndex) {
       throw new ValidationError(
-        `Param count mismatch: SQL has ${posIndex} positional placeholders but params has ${params.length}.`
+        `Param count mismatch: SQL has ${posIndex} positional placeholders but params has ${params.length}.`,
       );
     }
     if (dialect === "sqlserver") {
@@ -184,7 +184,7 @@ export function convertParams(sql, params, dialect) {
     }
     // mysql/mariadb: emit values in the order the placeholders appear in SQL
     const arr = [];
-    let scanIdx = 0;
+    const scanIdx = 0;
     let inS = false,
       inD = false,
       inLC = false,
@@ -256,7 +256,7 @@ export function convertParams(sql, params, dialect) {
   // No params provided
   if (posIndex > 0) {
     throw new ValidationError(
-      `SQL has ${posIndex} positional placeholders but no params were provided.`
+      `SQL has ${posIndex} positional placeholders but no params were provided.`,
     );
   }
   return { sql: out, params: [] };

@@ -1,9 +1,3 @@
-/**
- * MCP Database Server - Main Entry Point
- * Multi-database MCP server with intelligent query analysis
- * @module mcpServer
- */
-
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -13,290 +7,104 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import driverMap from "./drivers/index.js";
-import { RETRY_CONFIG, MAX_HISTORY_SIZE } from "./lib/constants.js";
-import * as connectionManager from "./lib/connectionManager.js";
-import * as toolHandlers from "./lib/toolHandlers.js";
-import * as resourceHandlers from "./lib/resourceHandlers.js";
+import { parseEnv } from "./lib/config.js";
+import { ConnectionRegistry } from "./lib/connectionManager.js";
+import { ToolHandlers } from "./lib/toolHandlers.js";
+import { ResourceHandlers } from "./lib/resourceHandlers.js";
 
-/**
- * Database Connection Wrapper
- * Wraps database driver with consistent interface
- * @class
- */
-class DatabaseConnection {
-  /**
-   * Create a new database connection
-   * @param {string} type - Database type
-   * @param {Object} config - Connection configuration
-   */
-  constructor(type, config) {
-    const DriverClass = driverMap[type];
-    if (!DriverClass)
-      throw new Error(`Unsupported database type: ${type}`);
-    this.driver = new DriverClass(config);
-    this.type = type;
-  }
+const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
 
-  connect() {
-    return this.driver.connect();
+function makeLogger() {
+  const levelName = (process.env.MCP_DB_LOG_LEVEL ?? "info").toLowerCase();
+  const min = LOG_LEVELS[levelName] ?? LOG_LEVELS.info;
+  function log(level, fields) {
+    if (LOG_LEVELS[level] < min) return;
+    const ts = new Date().toISOString();
+    const flat = Object.entries(fields)
+      .map(([k, v]) => `${k}=${typeof v === "string" ? JSON.stringify(v) : v}`)
+      .join(" ");
+    console.error(`[${ts}] [${level}] ${flat}`);
   }
-
-  query(q) {
-    return this.driver.query(q);
-  }
-
-  listTables() {
-    return this.driver.listTables();
-  }
-
-  describeTable(tableName) {
-    return this.driver.describeTable(tableName);
-  }
-
-  healthCheck() {
-    return this.driver.healthCheck();
-  }
-
-  close() {
-    return this.driver.close();
-  }
-
-  get currentDatabase() {
-    return this.driver.currentDatabase;
-  }
-
-  set currentDatabase(db) {
-    this.driver.currentDatabase = db;
-  }
+  return {
+    debug: (fields) => log("debug", fields),
+    info: (fields) => log("info", fields),
+    warn: (fields) => log("warn", fields),
+    error: (fields) => log("error", fields),
+  };
 }
 
-/**
- * Multi-Database MCP Server
- * Main server class implementing MCP protocol
- * @class
- */
-export default class MultiDatabaseMCPServer {
-  /**
-   * Create a new MCP server instance
-   */
+export class MultiDatabaseMCPServer {
   constructor() {
+    this.logger = makeLogger();
+    const { aliases, errors } = parseEnv(process.env);
+    for (const e of errors) {
+      this.logger.error({ event: "config_error", alias: e.alias, message: e.message });
+    }
+    if (Object.keys(aliases).length === 0) {
+      this.logger.error({
+        event: "no_valid_aliases",
+        hint: "Set DB_<ALIAS>_TYPE and DB_<ALIAS>_HOST (or _URL)",
+      });
+      process.exit(1);
+    }
+
+    const summary = Object.values(aliases)
+      .map((c) => `${c.alias}(${c.type},${c.mode})`)
+      .join(", ");
+    this.logger.info({
+      event: "loaded_aliases",
+      count: Object.keys(aliases).length,
+      aliases: summary,
+    });
+
+    this.registry = new ConnectionRegistry(aliases);
+    this.tools = new ToolHandlers(this.registry);
+    this.resources = new ResourceHandlers(this.registry);
+
     this.server = new Server(
-      { name: "@mcp/database", version: "1.0.0" },
-      { capabilities: { tools: {}, resources: {} } }
+      { name: "@unclecat/mcp-multi-db", version: "2.0.0" },
+      { capabilities: { tools: {}, resources: {} } },
     );
-    this.connections = new Map();
-    this.queryHistory = [];
-    this.maxHistorySize = MAX_HISTORY_SIZE;
-    this.setupToolHandlers();
-    this.setupResourceHandlers();
-    this.server.onerror = (e) => console.error("[MCP Error]", e);
-    process.on("SIGINT", async () => {
-      await this.cleanup();
-      process.exit(0);
-    });
+
+    this._registerHandlers();
+    this._installShutdownHandlers();
   }
 
-  /**
-   * Add query to history for review context
-   * @param {Object} metadata - Query metadata
-   */
-  addToQueryHistory(metadata) {
-    this.queryHistory.push({
-      ...metadata,
-      timestamp: new Date().toISOString(),
-    });
-    if (this.queryHistory.length > this.maxHistorySize) {
-      this.queryHistory.shift();
-    }
-  }
-
-  /**
-   * Get or create database connection
-   * @param {string} type - Database type
-   * @param {Object} cfg - Connection config
-   * @returns {DatabaseConnection} Database connection
-   */
-  async getConnection(type, cfg) {
-    const key = connectionManager.getConnectionKey(type, cfg);
-
-    if (!this.connections.has(key)) {
-      const conn = new DatabaseConnection(type, cfg);
-      this.connections.set(key, conn);
-    }
-
-    return this.connections.get(key);
-  }
-
-  /**
-   * Remove stale connection from cache
-   * @param {string} type - Database type
-   * @param {Object} cfg - Connection config
-   */
-  removeConnection(type, cfg) {
-    const key = connectionManager.getConnectionKey(type, cfg);
-    if (this.connections.has(key)) {
-      const conn = this.connections.get(key);
-      conn.close().catch(() => {});
-      this.connections.delete(key);
-    }
-  }
-
-  /**
-   * Execute operation with retry logic
-   * @param {Function} operation - Async operation
-   * @param {string} type - Database type
-   * @param {Object} cfg - Connection config
-   * @returns {Promise<*>} Operation result
-   */
-  async executeWithRetry(operation, type, cfg) {
-    return connectionManager.executeWithRetry(
-      operation,
-      type,
-      cfg,
-      this.removeConnection.bind(this),
-      RETRY_CONFIG
-    );
-  }
-
-  /**
-   * Setup MCP tool handlers
-   */
-  setupToolHandlers() {
+  _registerHandlers() {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => ({
-      tools: toolHandlers.createToolDefinitions(),
+      tools: this.tools.toolDescriptors(),
     }));
-
-    this.server.setRequestHandler(CallToolRequestSchema, async (req) => {
-      try {
-        const { name, arguments: args } = req.params;
-
-        if (name === "db_query") {
-          const { type, query, databaseAlias, connection } =
-            toolHandlers.validateQueryRequest(args);
-          const { cfg: baseCfg } = connectionManager.resolveDatabaseConnection(
-            type,
-            databaseAlias,
-            connection
-          );
-          const cfg = connectionManager.applyConnectionOverrides(baseCfg, type, connection);
-          return await toolHandlers.executeDatabaseQuery(
-            type,
-            cfg,
-            query,
-            this.getConnection.bind(this),
-            this.executeWithRetry.bind(this),
-            this.addToQueryHistory.bind(this)
-          );
-        }
-
-        if (name === "db_list_tables") {
-          const { type, databaseAlias, connection } =
-            toolHandlers.validateCommonRequest(args);
-          const { cfg: baseCfg } = connectionManager.resolveDatabaseConnection(
-            type,
-            databaseAlias,
-            connection
-          );
-          const cfg = connectionManager.applyConnectionOverrides(baseCfg, type, connection);
-          return await toolHandlers.listTables(
-            type,
-            cfg,
-            this.getConnection.bind(this),
-            this.executeWithRetry.bind(this)
-          );
-        }
-
-        if (name === "db_describe_table") {
-          const { type, tableName, databaseAlias, connection } =
-            toolHandlers.validateCommonRequest(args);
-          const { cfg: baseCfg } = connectionManager.resolveDatabaseConnection(
-            type,
-            databaseAlias,
-            connection
-          );
-          const cfg = connectionManager.applyConnectionOverrides(baseCfg, type, connection);
-          return await toolHandlers.describeTable(
-            type,
-            tableName,
-            cfg,
-            this.getConnection.bind(this),
-            this.executeWithRetry.bind(this)
-          );
-        }
-
-        if (name === "db_explain_query") {
-          const { type, query, databaseAlias, connection } =
-            toolHandlers.validateQueryRequest(args);
-          const { cfg: baseCfg } = connectionManager.resolveDatabaseConnection(
-            type,
-            databaseAlias,
-            connection
-          );
-          const cfg = connectionManager.applyConnectionOverrides(baseCfg, type, connection);
-          return await toolHandlers.explainQuery(
-            type,
-            cfg,
-            query,
-            this.getConnection.bind(this),
-            this.executeWithRetry.bind(this)
-          );
-        }
-
-        if (name === "db_analyze_query") {
-          return toolHandlers.analyzeQuery(args.type, args.query);
-        }
-
-        if (name === "db_query_history") {
-          return toolHandlers.getQueryHistory(this.queryHistory, args.limit);
-        }
-
-        throw new Error(`Tool not found: ${name}`);
-      } catch (err) {
-        return {
-          content: [{ type: "text", text: `❌ ${err.message}` }],
-          isError: true,
-        };
-      }
-    });
-  }
-
-  /**
-   * Setup MCP resource handlers
-   */
-  setupResourceHandlers() {
+    this.server.setRequestHandler(CallToolRequestSchema, async (req) =>
+      this.tools.dispatch(req.params.name, req.params.arguments ?? {}),
+    );
     this.server.setRequestHandler(ListResourcesRequestSchema, async () => ({
-      resources: resourceHandlers.getResourceDefinitions(),
+      resources: this.resources.list(),
     }));
-
-    this.server.setRequestHandler(ReadResourceRequestSchema, async (req) => {
-      return resourceHandlers.readResource(req.params.uri);
-    });
+    this.server.setRequestHandler(ReadResourceRequestSchema, async (req) =>
+      this.resources.read(req.params.uri),
+    );
   }
 
-  /**
-   * Cleanup connections on shutdown
-   */
-  async cleanup() {
-    const closePromises = [...this.connections.values()].map(async (c) => {
+  _installShutdownHandlers() {
+    const shutdown = async (sig) => {
+      this.logger.info({ event: "shutdown", signal: sig });
+      const t = setTimeout(() => process.exit(1), 5000);
       try {
-        await c.close();
+        await this.registry.closeAll();
       } catch (err) {
-        console.error("[DB MCP] Error closing connection:", err.message);
+        this.logger.error({ event: "shutdown_error", message: err.message });
+      } finally {
+        clearTimeout(t);
+        process.exit(0);
       }
-    });
-    await Promise.allSettled(closePromises);
-    this.connections.clear();
+    };
+    process.on("SIGINT", () => shutdown("SIGINT"));
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
   }
 
-  /**
-   * Start the MCP server
-   */
   async run() {
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    console.error(
-      "[DB MCP] Multi-Database Server started (with connection pooling)"
-    );
+    this.logger.info({ event: "ready" });
   }
 }

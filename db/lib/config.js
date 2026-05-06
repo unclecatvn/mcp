@@ -90,7 +90,7 @@ export function validateAliasConfig(alias, raw, defaults = DEFAULTS) {
   if (!raw.type || !VALID_TYPES.includes(raw.type)) {
     throw new ConfigError(
       `DB_${alias.toUpperCase()}_TYPE must be one of: ${VALID_TYPES.join(", ")}`,
-      { alias, field: "type", got: raw.type }
+      { alias, field: "type", got: raw.type },
     );
   }
 
@@ -117,10 +117,10 @@ export function validateAliasConfig(alias, raw, defaults = DEFAULTS) {
   }
 
   if (!host) {
-    throw new ConfigError(
-      `DB_${alias.toUpperCase()}_HOST (or _URL) is required`,
-      { alias, field: "host" }
-    );
+    throw new ConfigError(`DB_${alias.toUpperCase()}_HOST (or _URL) is required`, {
+      alias,
+      field: "host",
+    });
   }
   port ??= DEFAULT_PORTS[raw.type];
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -135,23 +135,26 @@ export function validateAliasConfig(alias, raw, defaults = DEFAULTS) {
   if (!VALID_MODES.includes(mode)) {
     throw new ConfigError(
       `DB_${alias.toUpperCase()}_MODE must be one of: ${VALID_MODES.join(", ")}`,
-      { alias, field: "mode", got: mode }
+      { alias, field: "mode", got: mode },
     );
   }
 
   const ssl = raw.ssl ?? defaults.ssl ?? DEFAULTS.ssl;
   if (!VALID_SSL.includes(ssl)) {
-    throw new ConfigError(
-      `DB_${alias.toUpperCase()}_SSL must be one of: ${VALID_SSL.join(", ")}`,
-      { alias, field: "ssl", got: ssl }
-    );
+    throw new ConfigError(`DB_${alias.toUpperCase()}_SSL must be one of: ${VALID_SSL.join(", ")}`, {
+      alias,
+      field: "ssl",
+      got: ssl,
+    });
   }
 
-  const timeoutMs = raw.timeoutMs ? Number(raw.timeoutMs) : (defaults.timeoutMs ?? DEFAULTS.timeoutMs);
+  const timeoutMs = raw.timeoutMs
+    ? Number(raw.timeoutMs)
+    : (defaults.timeoutMs ?? DEFAULTS.timeoutMs);
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > HARD_CAPS.timeoutMs) {
     throw new ConfigError(
       `DB_${alias.toUpperCase()}_TIMEOUT_MS must be a positive integer ≤ ${HARD_CAPS.timeoutMs}`,
-      { alias, field: "timeoutMs", got: timeoutMs }
+      { alias, field: "timeoutMs", got: timeoutMs },
     );
   }
 
@@ -159,7 +162,7 @@ export function validateAliasConfig(alias, raw, defaults = DEFAULTS) {
   if (!Number.isFinite(maxRows) || maxRows <= 0 || maxRows > HARD_CAPS.maxRows) {
     throw new ConfigError(
       `DB_${alias.toUpperCase()}_MAX_ROWS must be a positive integer ≤ ${HARD_CAPS.maxRows}`,
-      { alias, field: "maxRows", got: maxRows }
+      { alias, field: "maxRows", got: maxRows },
     );
   }
 
@@ -167,7 +170,7 @@ export function validateAliasConfig(alias, raw, defaults = DEFAULTS) {
   if (!Number.isFinite(poolMax) || poolMax <= 0 || poolMax > HARD_CAPS.poolMax) {
     throw new ConfigError(
       `DB_${alias.toUpperCase()}_POOL_MAX must be a positive integer ≤ ${HARD_CAPS.poolMax}`,
-      { alias, field: "poolMax", got: poolMax }
+      { alias, field: "poolMax", got: poolMax },
     );
   }
 

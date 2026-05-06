@@ -1,84 +1,172 @@
 import mysql from "mysql2/promise";
-import BaseDriver from "./BaseDriver.js";
+import { BaseDriver } from "./BaseDriver.js";
+import { ConnectionError, TimeoutError, QueryError } from "../lib/errors.js";
 
-export default class MySQLDriver extends BaseDriver {
+const RETRYABLE_RE =
+  /(ECONNRESET|ECONNREFUSED|PROTOCOL_CONNECTION_LOST|ETIMEDOUT|read ECONNRESET)/i;
+
+function buildSslOption(cfg) {
+  switch (cfg.ssl) {
+    case "disable":
+      return undefined;
+    case "prefer":
+      return {}; // let server decide
+    case "require":
+      return { rejectUnauthorized: false };
+    case "verify":
+      return {
+        rejectUnauthorized: true,
+        ca: cfg.caCert ? cfg.caCert : undefined,
+      };
+    default:
+      return undefined;
+  }
+}
+
+export class MysqlDriver extends BaseDriver {
   constructor(config) {
     super(config);
-    this.pool = null;
+    this.pool = mysql.createPool({
+      host: config.host,
+      port: config.port,
+      user: config.user,
+      password: config.password,
+      database: config.database,
+      connectionLimit: config.poolMax,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10000,
+      idleTimeout: 60000,
+      multipleStatements: false,
+      ssl: buildSslOption(config),
+    });
   }
 
-  async connect() {
-    // Sử dụng connection pool thay vì single connection
-    if (!this.pool) {
-      this.pool = mysql.createPool({
-        ...this.config,
-        multipleStatements: false,
-        timezone: "Z",
-        // Pool configuration để giữ connection alive
-        waitForConnections: true,
-        connectionLimit: 5,
-        queueLimit: 0,
-        enableKeepAlive: true,
-        keepAliveInitialDelay: 10000, // 10 seconds
-        // Auto reconnect khi connection bị timeout
-        idleTimeout: 60000, // 60 seconds
-      });
-
-      console.error(
-        `[DB MCP] MySQL Pool created: ${this.config.host}:${this.config.port}`
+  async executeQuery({ sql, params, timeoutMs }) {
+    let conn;
+    try {
+      conn = await this.pool.getConnection();
+    } catch (err) {
+      throw new ConnectionError(
+        `Cannot connect to MySQL: ${err.message}`,
+        {
+          alias: this.config.alias,
+        },
+        err,
       );
     }
-
-    return this.pool;
+    let timeoutHandle;
+    let timedOut = false;
+    try {
+      // For SELECT we add MAX_EXECUTION_TIME hint server-side; for any statement
+      // we also set up a JS abort timer that destroys the connection on timeout.
+      const isSelect = /^\s*select\b/i.test(sql);
+      const finalSql = isSelect ? injectMaxExecutionTime(sql, timeoutMs) : sql;
+      const queryPromise = conn.query(finalSql, params);
+      const abortPromise = new Promise((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          timedOut = true;
+          conn.destroy();
+          reject(
+            new TimeoutError(
+              `Query exceeded ${timeoutMs}ms timeout for alias '${this.config.alias}'.`,
+              { alias: this.config.alias, timeoutMs },
+            ),
+          );
+        }, timeoutMs);
+      });
+      const [rows, fields] = await Promise.race([queryPromise, abortPromise]);
+      const arr = Array.isArray(rows) ? rows : [];
+      return {
+        rows: arr,
+        rowCount:
+          typeof rows === "object" && "affectedRows" in rows ? rows.affectedRows : arr.length,
+        columns: (fields ?? []).map((f) => ({ name: f.name, type: f.type })),
+      };
+    } catch (err) {
+      if (
+        timedOut ||
+        /max_execution_time/i.test(err.message ?? "") ||
+        /timeout/i.test(err.message ?? "")
+      ) {
+        throw new TimeoutError(
+          `Query exceeded ${timeoutMs}ms timeout for alias '${this.config.alias}'.`,
+          { alias: this.config.alias, timeoutMs },
+          err,
+        );
+      }
+      if (RETRYABLE_RE.test(err.message ?? "")) {
+        throw new ConnectionError(
+          `MySQL connection error: ${err.message}`,
+          {
+            alias: this.config.alias,
+          },
+          err,
+        );
+      }
+      throw new QueryError(
+        `MySQL query failed: ${err.message}`,
+        {
+          alias: this.config.alias,
+        },
+        err,
+      );
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (conn && !timedOut) conn.release();
+    }
   }
 
-  async getConnection() {
-    const pool = await this.connect();
-    return pool.getConnection();
+  async listTables({ schema } = {}) {
+    const sql = schema
+      ? "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema = ? ORDER BY table_schema, table_name"
+      : "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_schema, table_name";
+    const params = schema ? [schema] : [];
+    const r = await this.executeQuery({ sql, params, timeoutMs: this.config.timeoutMs });
+    return r.rows.map((row) => ({
+      name: row.table_name ?? row.TABLE_NAME,
+      schema: row.table_schema ?? row.TABLE_SCHEMA,
+    }));
   }
 
-  async query(queryText) {
-    const pool = await this.connect();
-
-    // Pool tự động handle reconnect khi connection bị stale
-    const [results, fields] = await pool.execute(queryText);
-    return { results, fields, type: "mysql" };
-  }
-
-  async listTables() {
-    const sql = "SHOW TABLES";
-    const { results } = await this.query(sql);
-    return results.map((row) => Object.values(row)[0]);
-  }
-
-  async describeTable(tableName) {
-    const pool = await this.connect();
-
-    // Use parameterized queries to prevent injection
-    const [columns] = await pool.query(`DESCRIBE ??`, [tableName]);
-    const [indexes] = await pool.query(`SHOW INDEX FROM ??`, [tableName]);
-
-    return {
-      columns,
-      indexes,
-    };
+  async describeTable({ tableName, schema }) {
+    const cols = await this.executeQuery({
+      sql: `SELECT column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_name = ? AND table_schema = ${schema ? "?" : "DATABASE()"}
+            ORDER BY ordinal_position`,
+      params: schema ? [tableName, schema] : [tableName],
+      timeoutMs: this.config.timeoutMs,
+    });
+    const idx = await this.executeQuery({
+      sql: `SELECT index_name, column_name, non_unique
+            FROM information_schema.statistics
+            WHERE table_name = ? AND table_schema = ${schema ? "?" : "DATABASE()"}
+            ORDER BY index_name, seq_in_index`,
+      params: schema ? [tableName, schema] : [tableName],
+      timeoutMs: this.config.timeoutMs,
+    });
+    return { columns: cols.rows, indexes: idx.rows };
   }
 
   async healthCheck() {
     try {
-      const pool = await this.connect();
-      await pool.query("SELECT 1");
-      return true;
-    } catch (e) {
-      console.error("[DB MCP] MySQL health check failed:", e.message);
+      const r = await this.executeQuery({
+        sql: "SELECT 1 AS ok",
+        params: [],
+        timeoutMs: 5000,
+      });
+      return r.rows[0]?.ok === 1;
+    } catch {
       return false;
     }
   }
 
   async close() {
-    if (!this.pool) return;
     await this.pool.end();
-    this.pool = null;
-    console.error("[DB MCP] MySQL Pool closed");
   }
+}
+
+function injectMaxExecutionTime(sql, ms) {
+  // Inject MAX_EXECUTION_TIME(<ms>) optimizer hint right after the leading SELECT.
+  return sql.replace(/^\s*select\b/i, (m) => `${m} /*+ MAX_EXECUTION_TIME(${Number(ms)}) */`);
 }

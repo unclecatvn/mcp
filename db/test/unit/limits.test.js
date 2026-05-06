@@ -7,7 +7,7 @@ describe("applyRowLimit", () => {
       { primaryType: "SELECT", hasLimit: false, isMultiStatement: false },
       "SELECT * FROM users",
       100,
-      "postgresql"
+      "postgresql",
     );
     expect(r.sql).toMatch(/LIMIT 101$/);
     expect(r.fetchPlusOne).toBe(true);
@@ -18,7 +18,7 @@ describe("applyRowLimit", () => {
       { primaryType: "SELECT", hasLimit: true, isMultiStatement: false },
       "SELECT * FROM t LIMIT 5",
       100,
-      "postgresql"
+      "postgresql",
     );
     expect(r.sql).toBe("SELECT * FROM t LIMIT 5");
     expect(r.fetchPlusOne).toBe(false);
@@ -29,7 +29,7 @@ describe("applyRowLimit", () => {
       { primaryType: "INSERT", hasLimit: false, isMultiStatement: false },
       "INSERT INTO t VALUES (1)",
       100,
-      "postgresql"
+      "postgresql",
     );
     expect(r.sql).toBe("INSERT INTO t VALUES (1)");
     expect(r.fetchPlusOne).toBe(false);
@@ -40,7 +40,7 @@ describe("applyRowLimit", () => {
       { primaryType: "SELECT", hasLimit: false, isMultiStatement: true },
       "SELECT 1; SELECT 2",
       100,
-      "postgresql"
+      "postgresql",
     );
     expect(r.sql).toBe("SELECT 1; SELECT 2");
     expect(r.fetchPlusOne).toBe(false);
@@ -51,7 +51,7 @@ describe("applyRowLimit", () => {
       { primaryType: "SELECT", hasLimit: false, isMultiStatement: false },
       "SELECT * FROM t",
       100,
-      "sqlserver"
+      "sqlserver",
     );
     expect(r.sql).toMatch(/^SELECT TOP 101 \* FROM t$/);
     expect(r.fetchPlusOne).toBe(true);
@@ -62,7 +62,7 @@ describe("applyRowLimit", () => {
       { primaryType: "SELECT", hasLimit: false, isMultiStatement: false },
       "SELECT * FROM t;",
       100,
-      "mysql"
+      "mysql",
     );
     expect(r.sql).toBe("SELECT * FROM t LIMIT 101");
   });

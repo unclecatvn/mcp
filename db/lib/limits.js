@@ -17,11 +17,7 @@ const HARD_ROWS_CAP = 1_000_000;
  * @returns {{ sql: string, fetchPlusOne: boolean }}
  */
 export function applyRowLimit(analysis, sql, maxRows, dialect) {
-  if (
-    analysis.primaryType !== "SELECT" ||
-    analysis.hasLimit ||
-    analysis.isMultiStatement
-  ) {
+  if (analysis.primaryType !== "SELECT" || analysis.hasLimit || analysis.isMultiStatement) {
     return { sql, fetchPlusOne: false };
   }
   const fetch = maxRows + 1;

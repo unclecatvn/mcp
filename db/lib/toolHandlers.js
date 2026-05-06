@@ -1,513 +1,278 @@
-/**
- * Tool Handlers Module
- * Implements MCP tool handlers for database operations
- * @module lib/toolHandlers
- */
-
-import { SUPPORTED_DATABASE_TYPES } from "./constants.js";
 import {
-  detectQueryType,
-  extractTableNames,
-  analyzeQueryPerformance,
-} from "./queryAnalyzer.js";
+  DbQueryInputSchema,
+  DbListTablesInputSchema,
+  DbDescribeTableInputSchema,
+  DbTestConnectionInputSchema,
+  DbQueryHistoryInputSchema,
+  DbExplainQueryInputSchema,
+  parseOrThrow,
+} from "./validators.js";
+import { analyzeQuery } from "./queryAnalyzer.js";
+import { enforceMode } from "./modeEnforcer.js";
+import { applyRowLimit, resolveTimeout, resolveMaxRows } from "./limits.js";
+import { convertParams } from "./paramConverter.js";
+import { formatErrorForMcp } from "./errors.js";
 
-/**
- * Create tool definitions for MCP server
- * @returns {Object[]} Array of tool definitions
- */
-export function createToolDefinitions() {
-  return [
-    {
-      name: "db_query",
-      description: `Execute SQL query on database with performance tracking and metadata.
+const HISTORY_MAX = 50;
 
-Returns query results WITH execution metadata including:
-- Query type (SELECT/INSERT/UPDATE/DELETE/DDL)
-- Execution time in milliseconds
-- Number of rows affected/returned
-- Tables involved in the query
-- Connection info (host, port, database)
-
-This metadata helps AI assistants review and optimize query performance.
-
-Supported: MySQL, MariaDB, PostgreSQL, SQL Server`,
-      inputSchema: {
-        type: "object",
-        properties: {
-          type: {
-            type: "string",
-            enum: ["mysql", "mariadb", "postgresql", "sqlserver"],
-            description: "Database type (required)",
-          },
-          query: {
-            type: "string",
-            description: "SQL query to execute",
-          },
-          databaseAlias: {
-            type: "string",
-            description:
-              "Database alias from env vars (optional). If not specified, uses default database.",
-          },
-          connection: {
-            type: "object",
-            description:
-              "Connection config override (optional - overrides env vars)",
-          },
-        },
-        required: ["type", "query"],
-      },
-    },
-    {
-      name: "db_list_tables",
-      description: "List all tables in the current database.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          type: {
-            type: "string",
-            enum: ["mysql", "mariadb", "postgresql", "sqlserver"],
-            description: "Database type (required)",
-          },
-          databaseAlias: {
-            type: "string",
-            description: "Database alias (optional)",
-          },
-          connection: {
-            type: "object",
-            description: "Connection config override (optional)",
-          },
-        },
-        required: ["type"],
-      },
-    },
-    {
-      name: "db_describe_table",
-      description:
-        "Get detailed table structure including columns, data types, indexes, and constraints. Use this to understand table schema before writing queries.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          type: {
-            type: "string",
-            enum: ["mysql", "mariadb", "postgresql", "sqlserver"],
-            description: "Database type (required)",
-          },
-          tableName: {
-            type: "string",
-            description: "Name of the table to describe",
-          },
-          databaseAlias: {
-            type: "string",
-            description: "Database alias (optional)",
-          },
-          connection: {
-            type: "object",
-            description: "Connection config override (optional)",
-          },
-        },
-        required: ["type", "tableName"],
-      },
-    },
-    {
-      name: "db_explain_query",
-      description: `Get the query execution plan (EXPLAIN) to analyze how the database will execute the query.
-
-This helps identify:
-- Whether indexes are being used
-- Join order and strategies
-- Potential performance bottlenecks
-- Full table scans
-
-Use this BEFORE running expensive queries on large datasets.
-
-Supported: MySQL (EXPLAIN), PostgreSQL (EXPLAIN ANALYZE), SQL Server (EXECUTION PLAN)`,
-      inputSchema: {
-        type: "object",
-        properties: {
-          type: {
-            type: "string",
-            enum: ["mysql", "mariadb", "postgresql", "sqlserver"],
-            description: "Database type (required)",
-          },
-          query: {
-            type: "string",
-            description: "SQL query to explain (SELECT queries recommended)",
-          },
-          databaseAlias: {
-            type: "string",
-            description: "Database alias (optional)",
-          },
-          connection: {
-            type: "object",
-            description: "Connection config override (optional)",
-          },
-        },
-        required: ["type", "query"],
-      },
-    },
-    {
-      name: "db_analyze_query",
-      description: `AI-powered query analysis that reviews a SQL query and provides optimization suggestions.
-
-Returns analysis including:
-- Query type classification (SELECT/INSERT/UPDATE/DELETE/DDL)
-- Read/write safety assessment
-- Tables and columns involved
-- Performance considerations
-- Best practice recommendations
-- Suggested optimizations if applicable
-
-Use this to review queries before execution or to understand why a query might be slow.`,
-      inputSchema: {
-        type: "object",
-        properties: {
-          type: {
-            type: "string",
-            enum: ["mysql", "mariadb", "postgresql", "sqlserver"],
-            description: "Database type (required)",
-          },
-          query: {
-            type: "string",
-            description: "SQL query to analyze",
-          },
-        },
-        required: ["type", "query"],
-      },
-    },
-    {
-      name: "db_query_history",
-      description: `Get recent query execution history with performance metrics.
-
-This helps:
-- Track slow queries
-- Review query patterns
-- Debug performance issues
-- Understand what queries have been executed recently
-
-Returns the last 50 queries with metadata (execution time, rows affected, success status).`,
-      inputSchema: {
-        type: "object",
-        properties: {
-          limit: {
-            type: "number",
-            description: "Maximum number of history entries to return (default: 10, max: 50)",
-          },
-        },
-      },
-    },
-  ];
-}
-
-/**
- * Validate query request parameters
- * @param {Object} args - Request arguments
- * @returns {Object} Validated arguments
- * @throws {Error} If validation fails
- */
-export function validateQueryRequest(args) {
-  const { type, query } = args;
-  if (!type || !query) {
-    throw new Error("type & query are required");
+export class ToolHandlers {
+  /** @param {import("./connectionManager.js").ConnectionRegistry} registry */
+  constructor(registry) {
+    this.registry = registry;
+    this.history = [];
   }
 
-  if (!SUPPORTED_DATABASE_TYPES.includes(type)) {
-    throw new Error(`Unsupported database type: ${type}`);
-  }
-
-  return args;
-}
-
-/**
- * Validate common request parameters
- * @param {Object} args - Request arguments
- * @returns {Object} Validated arguments
- * @throws {Error} If validation fails
- */
-export function validateCommonRequest(args) {
-  const { type } = args;
-  if (!type) {
-    throw new Error("type is required");
-  }
-
-  if (!SUPPORTED_DATABASE_TYPES.includes(type)) {
-    throw new Error(`Unsupported database type: ${type}`);
-  }
-
-  return args;
-}
-
-/**
- * Execute database query with metadata tracking
- * @param {string} type - Database type
- * @param {Object} cfg - Connection config
- * @param {string} query - SQL query
- * @param {Function} getConnection - Function to get database connection
- * @param {Function} executeWithRetry - Function to execute with retry
- * @param {Function} addToHistory - Function to add query to history
- * @returns {Promise<Object>} Query result with metadata
- */
-export async function executeDatabaseQuery(
-  type,
-  cfg,
-  query,
-  getConnection,
-  executeWithRetry,
-  addToHistory
-) {
-  const safeLog = query.replace(
-    /password\s*=\s*['"][^'"]*['"]/gi,
-    "password='***'"
-  );
-  console.error(
-    `[DB MCP] Executing ${type}: ${safeLog.slice(0, 200)}${
-      safeLog.length > 200 ? "..." : ""
-    }`
-  );
-
-  const startTime = Date.now();
-  const queryInfo = detectQueryType(query, type);
-  const tables = extractTableNames(query, type);
-
-  const queryMetadata = {
-    databaseType: type,
-    host: cfg.host || cfg.server,
-    port: cfg.port,
-    database: cfg.database,
-    queryType: queryInfo.type,
-    isReadOnly: queryInfo.readOnly,
-    tables,
-    queryPreview: query.slice(0, 100),
-  };
-
-  try {
-    const res = await executeWithRetry(
-      async () => {
-        const db = await getConnection(type, cfg);
-        return await db.query(query);
+  /** Tool list shipped to the MCP client. */
+  toolDescriptors() {
+    return [
+      {
+        name: "db_query",
+        description: "Execute a parameterized SQL query against a configured database alias.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            databaseAlias: { type: "string", description: "Alias from env (e.g., 'prod')." },
+            sql: { type: "string", description: "SQL with ? or :name placeholders." },
+            params: {
+              description: "Array (positional ?) or object (named :name).",
+              oneOf: [{ type: "array" }, { type: "object" }],
+            },
+            maxRows: { type: "integer", minimum: 1, maximum: 1000000 },
+            timeoutMs: { type: "integer", minimum: 1, maximum: 600000 },
+          },
+          required: ["databaseAlias", "sql"],
+          additionalProperties: false,
+        },
       },
-      type,
-      cfg
+      {
+        name: "db_list_tables",
+        description: "List tables in the configured database (optionally filtered by schema).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            databaseAlias: { type: "string" },
+            schema: { type: "string" },
+          },
+          required: ["databaseAlias"],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "db_describe_table",
+        description: "Describe a table's columns and indexes.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            databaseAlias: { type: "string" },
+            tableName: { type: "string" },
+            schema: { type: "string" },
+          },
+          required: ["databaseAlias", "tableName"],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "db_test_connection",
+        description: "Run a healthcheck against the alias.",
+        inputSchema: {
+          type: "object",
+          properties: { databaseAlias: { type: "string" } },
+          required: ["databaseAlias"],
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "db_query_history",
+        description: "Return the last N executed queries (sanitized).",
+        inputSchema: {
+          type: "object",
+          properties: {
+            databaseAlias: { type: "string" },
+            limit: { type: "integer", minimum: 1, maximum: 500 },
+          },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: "db_explain_query",
+        description: "Run EXPLAIN/EXPLAIN ANALYZE-equivalent and return the plan rows.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            databaseAlias: { type: "string" },
+            sql: { type: "string" },
+            params: { oneOf: [{ type: "array" }, { type: "object" }] },
+          },
+          required: ["databaseAlias", "sql"],
+          additionalProperties: false,
+        },
+      },
+    ];
+  }
+
+  /** Top-level tool dispatch with try/catch for MCP error formatting. */
+  async dispatch(name, input) {
+    try {
+      switch (name) {
+        case "db_query":
+          return await this.handleQuery(input);
+        case "db_list_tables":
+          return await this.handleListTables(input);
+        case "db_describe_table":
+          return await this.handleDescribeTable(input);
+        case "db_test_connection":
+          return await this.handleTestConnection(input);
+        case "db_query_history":
+          return await this.handleHistory(input);
+        case "db_explain_query":
+          return await this.handleExplain(input);
+        default:
+          throw new Error(`Unknown tool: ${name}`);
+      }
+    } catch (err) {
+      return formatErrorForMcp(err);
+    }
+  }
+
+  async handleQuery(input) {
+    const args = await parseOrThrow(DbQueryInputSchema, input, "db_query");
+    return this._runQuery(args, /*explain*/ false);
+  }
+
+  async handleExplain(input) {
+    const args = await parseOrThrow(DbExplainQueryInputSchema, input, "db_explain_query");
+    const cfg = this.registry.getConfig(args.databaseAlias);
+    let prefix;
+    switch (cfg.type) {
+      case "postgresql":
+        prefix = "EXPLAIN ";
+        break;
+      case "mysql":
+      case "mariadb":
+        prefix = "EXPLAIN ";
+        break;
+      case "sqlserver":
+        // SQL Server uses SET SHOWPLAN_TEXT ON; for simplicity prefix with SET SHOWPLAN
+        // here we run as-is; users can prepend SET SHOWPLAN_TEXT ON
+        prefix = "";
+        break;
+      default:
+        prefix = "EXPLAIN ";
+    }
+    return this._runQuery({ ...args, sql: `${prefix}${args.sql}` }, /*explain*/ true);
+  }
+
+  async _runQuery({ databaseAlias, sql, params, maxRows, timeoutMs }, isExplain) {
+    const cfg = this.registry.getConfig(databaseAlias);
+    const analysis = analyzeQuery(sql);
+    enforceMode(analysis, cfg.mode, databaseAlias);
+
+    const effMaxRows = resolveMaxRows(maxRows, cfg.maxRows);
+    const effTimeout = resolveTimeout(timeoutMs, cfg.timeoutMs);
+
+    const limited = applyRowLimit(analysis, sql, effMaxRows, cfg.type);
+    const converted = convertParams(limited.sql, params, cfg.type);
+
+    const start = Date.now();
+    const { result, retries } = await this.registry.withRetry(databaseAlias, (driver) =>
+      driver.executeQuery({
+        sql: converted.sql,
+        params: converted.params,
+        timeoutMs: effTimeout,
+      }),
     );
+    const elapsedMs = Date.now() - start;
 
-    const executionTime = Date.now() - startTime;
-
-    if (!res || typeof res !== "object") {
-      const errorResult = {
-        content: [
-          {
-            type: "text",
-            text: "Invalid result from database driver",
-          },
-        ],
-        isError: true,
-        _metadata: {
-          ...queryMetadata,
-          executionTime,
-          success: false,
-          error: "Invalid result from driver",
-        },
-      };
-      addToHistory(errorResult._metadata);
-      return errorResult;
+    let rows = result.rows;
+    let truncated = false;
+    if (limited.fetchPlusOne && rows.length > effMaxRows) {
+      rows = rows.slice(0, effMaxRows);
+      truncated = true;
     }
+    const rowCount = truncated ? effMaxRows : result.rowCount;
 
-    let resultData;
-    let rowCount = 0;
-
-    if (Array.isArray(res.results) && res.results.length === 0) {
-      resultData = [];
-      rowCount = 0;
-    } else if (!Array.isArray(res.results)) {
-      resultData = res;
-      rowCount = res.rowsAffected || res.rowCount || 0;
-    } else {
-      resultData = res.results;
-      rowCount = res.results.length;
-    }
-
-    const metadata = {
-      ...queryMetadata,
-      executionTime,
-      success: true,
+    this._record({
+      alias: databaseAlias,
+      type: analysis.primaryType,
+      elapsedMs,
       rowCount,
-      hasResults: Array.isArray(resultData) ? resultData.length > 0 : true,
-    };
-
-    addToHistory(metadata);
+      truncated,
+      success: true,
+    });
 
     return {
       content: [
         {
           type: "text",
-          text: JSON.stringify(resultData, null, 2),
-        },
-        {
-          type: "text",
-          text: `\n--- Query Metadata ---\nDatabase: ${type} @ ${cfg.host || cfg.server}:${cfg.port}/${cfg.database}\nQuery Type: ${queryInfo.type}\nExecution Time: ${executionTime}ms\nRows Affected/Returned: ${rowCount}\nTables: ${tables.join(", ") || "N/A"}`,
+          text: JSON.stringify(
+            {
+              rows,
+              rowCount,
+              columns: result.columns,
+              elapsedMs,
+              retries,
+              truncated,
+              ...(truncated
+                ? {
+                    hint: "Result truncated. Add LIMIT to your query or pass a higher maxRows.",
+                  }
+                : {}),
+              ...(isExplain ? { isExplain: true } : {}),
+            },
+            null,
+            2,
+          ),
         },
       ],
-      _metadata: metadata,
     };
-  } catch (err) {
-    const executionTime = Date.now() - startTime;
-    const errorMetadata = {
-      ...queryMetadata,
-      executionTime,
-      success: false,
-      error: err.message,
-      errorCode: err.code,
-    };
-    addToHistory(errorMetadata);
+  }
 
+  async handleListTables(input) {
+    const args = await parseOrThrow(DbListTablesInputSchema, input, "db_list_tables");
+    const { result } = await this.registry.withRetry(args.databaseAlias, (d) =>
+      d.listTables({ schema: args.schema }),
+    );
     return {
-      content: [{ type: "text", text: `❌ ${err.message}` }],
-      isError: true,
-      _metadata: errorMetadata,
+      content: [{ type: "text", text: JSON.stringify({ tables: result }, null, 2) }],
     };
   }
-}
 
-/**
- * Get query history
- * @param {Array} queryHistory - Query history array
- * @param {number} limit - Maximum number of entries
- * @returns {Object} Tool response with history
- */
-export function getQueryHistory(queryHistory, limit = 10) {
-  const historyLimit = Math.min(Math.max(1, limit), 50);
-  const history = queryHistory.slice(-historyLimit).reverse();
-
-  return {
-    content: [
-      {
-        type: "text",
-        text: `## Query Execution History (Last ${history.length} queries)\n\n${history.length === 0
-          ? "No queries executed yet."
-          : history.map((h, i) => `
-### ${i + 1}. ${h.queryType} - ${h.success ? "✅" : "❌"}
-- **Database:** ${h.databaseType} @ ${h.host}:${h.port}/${h.database}
-- **Tables:** ${h.tables?.join(", ") || "N/A"}
-- **Execution Time:** ${h.executionTime}ms
-- **Rows:** ${h.rowCount ?? "N/A"}
-- **Timestamp:** ${h.timestamp}
-- **Query Preview:** \`${h.queryPreview}\`
-${h.error ? `- **Error:** ${h.error}` : ""}`).join("\n")
-          }`,
-      },
-    ],
-  };
-}
-
-/**
- * Analyze query without executing
- * @param {string} type - Database type
- * @param {string} query - SQL query
- * @returns {Object} Tool response with analysis
- */
-export function analyzeQuery(type, query) {
-  if (!type || !query) {
-    throw new Error("type and query are required");
+  async handleDescribeTable(input) {
+    const args = await parseOrThrow(DbDescribeTableInputSchema, input, "db_describe_table");
+    const { result } = await this.registry.withRetry(args.databaseAlias, (d) =>
+      d.describeTable({ tableName: args.tableName, schema: args.schema }),
+    );
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    };
   }
 
-  const queryInfo = detectQueryType(query);
-  const tables = extractTableNames(query, type);
-  const analysis = analyzeQueryPerformance(query, queryInfo, tables, type);
-
-  return {
-    content: [
-      {
-        type: "text",
-        text: `## SQL Query Analysis\n\n**Query Type:** \`${queryInfo.type}\`\n**Read-Only:** ${queryInfo.readOnly ? "Yes" : "No"}\n**DDL Operation:** ${queryInfo.isDDL ? "Yes" : "No"}\n\n**Tables Involved:**\n${tables.length > 0 ? tables.map(t => `- ${t}`).join("\n") : "- None detected"}\n\n---\n\n${analysis}`,
-      },
-    ],
-  };
-}
-
-/**
- * Explain query execution plan
- * @param {string} type - Database type
- * @param {Object} cfg - Connection config
- * @param {string} query - SQL query
- * @param {Function} getConnection - Function to get database connection
- * @param {Function} executeWithRetry - Function to execute with retry
- * @returns {Promise<Object>} Tool response with execution plan
- */
-export async function explainQuery(type, cfg, query, getConnection, executeWithRetry) {
-  // Build EXPLAIN query based on database type
-  let explainQuery;
-  if (type === "postgresql") {
-    explainQuery = `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query}`;
-  } else if (type === "sqlserver") {
-    explainQuery = `SET SHOWPLAN_ALL ON; ${query}; SET SHOWPLAN_ALL OFF;`;
-  } else {
-    // MySQL/MariaDB
-    explainQuery = `EXPLAIN FORMAT=JSON ${query}`;
+  async handleTestConnection(input) {
+    const args = await parseOrThrow(DbTestConnectionInputSchema, input, "db_test_connection");
+    const { result } = await this.registry.withRetry(args.databaseAlias, (d) => d.healthCheck());
+    return {
+      content: [{ type: "text", text: JSON.stringify({ ok: result }, null, 2) }],
+    };
   }
 
-  const result = await executeWithRetry(
-    async () => {
-      const db = await getConnection(type, cfg);
-      return await db.query(explainQuery);
-    },
-    type,
-    cfg
-  );
+  async handleHistory(input) {
+    const args = await parseOrThrow(DbQueryHistoryInputSchema, input, "db_query_history");
+    const filtered = args.databaseAlias
+      ? this.history.filter((h) => h.alias === args.databaseAlias)
+      : this.history;
+    const limit = args.limit ?? HISTORY_MAX;
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(filtered.slice(-limit), null, 2),
+        },
+      ],
+    };
+  }
 
-  return {
-    content: [
-      {
-        type: "text",
-        text: `## Query Execution Plan (EXPLAIN)\n\n**Original Query:**\n\`\`\`sql\n${query}\n\`\`\`\n\n**Execution Plan:**\n\`\`\`json\n${JSON.stringify(result.results || result, null, 2)}\n\`\`\`\n\n**Key Analysis Points:**\n- Check for "ALL" type scans (indicates full table scan - bad for large tables)\n- Look for "key" column usage (indicates index usage)\n- Note "rows" estimation (lower is better)\n- Check for "Using filesort" or "Using temporary" (may indicate optimization needed)`,
-      },
-    ],
-  };
-}
-
-/**
- * List all tables in database
- * @param {string} type - Database type
- * @param {Object} cfg - Connection config
- * @param {Function} getConnection - Function to get database connection
- * @param {Function} executeWithRetry - Function to execute with retry
- * @returns {Promise<Object>} Tool response with table list
- */
-export async function listTables(type, cfg, getConnection, executeWithRetry) {
-  const tables = await executeWithRetry(
-    async () => {
-      const db = await getConnection(type, cfg);
-      return await db.listTables();
-    },
-    type,
-    cfg
-  );
-
-  return {
-    content: [{ type: "text", text: JSON.stringify(tables, null, 2) }],
-  };
-}
-
-/**
- * Describe table structure
- * @param {string} type - Database type
- * @param {string} tableName - Table name
- * @param {Object} cfg - Connection config
- * @param {Function} getConnection - Function to get database connection
- * @param {Function} executeWithRetry - Function to execute with retry
- * @returns {Promise<Object>} Tool response with table details
- */
-export async function describeTable(type, tableName, cfg, getConnection, executeWithRetry) {
-  if (!tableName) throw new Error("tableName is required");
-
-  const details = await executeWithRetry(
-    async () => {
-      const db = await getConnection(type, cfg);
-      return await db.describeTable(tableName);
-    },
-    type,
-    cfg
-  );
-
-  return {
-    content: [{ type: "text", text: JSON.stringify(details, null, 2) }],
-  };
+  _record(entry) {
+    this.history.push({ ...entry, ts: new Date().toISOString() });
+    if (this.history.length > HISTORY_MAX) this.history.shift();
+  }
 }

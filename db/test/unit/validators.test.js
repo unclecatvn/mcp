@@ -111,7 +111,7 @@ describe("simple schemas", () => {
   it("DbExplainQueryInputSchema requires sql", () => {
     expect(DbExplainQueryInputSchema.safeParse({ databaseAlias: "p" }).success).toBe(false);
     expect(
-      DbExplainQueryInputSchema.safeParse({ databaseAlias: "p", sql: "SELECT 1" }).success
+      DbExplainQueryInputSchema.safeParse({ databaseAlias: "p", sql: "SELECT 1" }).success,
     ).toBe(true);
   });
 });

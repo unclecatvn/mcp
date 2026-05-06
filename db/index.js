@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-
-/**
- * MCP Database Server – bootstrap
- * Khởi động MultiDatabaseMCPServer ngắn gọn nhất.
- */
-import MultiDatabaseMCPServer from './mcpServer.js';
+import { MultiDatabaseMCPServer } from "./mcpServer.js";
 
 const server = new MultiDatabaseMCPServer();
-server.run().catch(console.error); 
+server.run().catch((err) => {
+  console.error(
+    `[${new Date().toISOString()}] [error] event=startup_failed message=${err.message}`,
+  );
+  process.exit(1);
+});

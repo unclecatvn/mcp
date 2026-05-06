@@ -71,7 +71,7 @@ describe("convertParams — named :name", () => {
 
   it("rejects unknown :name", () => {
     expect(() => convertParams("WHERE a=:x AND b=:y", { x: 1 }, "postgresql")).toThrow(
-      ValidationError
+      ValidationError,
     );
   });
 

@@ -34,7 +34,8 @@ const STATEMENT_RANK = {
   UNKNOWN: 3, // conservative: unknown requires the strictest mode
 };
 
-const KEYWORD_RE = /^(SELECT|INSERT|UPDATE|DELETE|MERGE|CREATE|DROP|TRUNCATE|ALTER|RENAME|GRANT|REVOKE|EXPLAIN|DESCRIBE|DESC|SHOW|USE|WITH)\b/i;
+const KEYWORD_RE =
+  /^(SELECT|INSERT|UPDATE|DELETE|MERGE|CREATE|DROP|TRUNCATE|ALTER|RENAME|GRANT|REVOKE|EXPLAIN|DESCRIBE|DESC|SHOW|USE|WITH)\b/i;
 
 const LIMIT_RE = /\b(LIMIT\s+\d+|TOP\s*\(?\s*\d+|FETCH\s+(FIRST|NEXT)\s+\d+\s+ROWS?)\b/i;
 
@@ -116,7 +117,7 @@ function classifyStatement(stmt) {
         }
       }
     }
-    let rest = s.slice(i).replace(/^[\s,]+/, "");
+    const rest = s.slice(i).replace(/^[\s,]+/, "");
     if (/^,/.test(rest)) {
       // another CTE follows; loop continues stripping
       s = `WITH ${rest.replace(/^,\s*/, "")}`;

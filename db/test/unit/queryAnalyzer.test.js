@@ -52,14 +52,14 @@ describe("analyzeQuery", () => {
 
   it("ignores comments and string literals when classifying", () => {
     const r = analyzeQuery(
-      "-- DROP TABLE bait\n/* DELETE FROM bait */ SELECT 'DROP TABLE bait' AS s"
+      "-- DROP TABLE bait\n/* DELETE FROM bait */ SELECT 'DROP TABLE bait' AS s",
     );
     expect(r.primaryType).toBe("SELECT");
   });
 
   it("handles WITH ... DELETE (CTE with DML)", () => {
     const r = analyzeQuery(
-      "WITH x AS (SELECT id FROM users WHERE inactive) DELETE FROM users WHERE id IN (SELECT id FROM x)"
+      "WITH x AS (SELECT id FROM users WHERE inactive) DELETE FROM users WHERE id IN (SELECT id FROM x)",
     );
     expect(r.primaryType).toBe("DELETE");
   });

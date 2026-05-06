@@ -37,7 +37,7 @@ export function enforceMode(analysis, aliasMode, alias) {
   if (aliasRank === undefined) {
     throw new PermissionDeniedError(
       `Internal error: invalid alias mode '${aliasMode}' for alias '${alias}'.`,
-      { alias, currentMode: aliasMode }
+      { alias, currentMode: aliasMode },
     );
   }
   for (const stmt of analysis.statements) {
@@ -53,7 +53,7 @@ export function enforceMode(analysis, aliasMode, alias) {
           operation: stmt.type,
           currentMode: aliasMode,
           requiredMode: required,
-        }
+        },
       );
     }
   }

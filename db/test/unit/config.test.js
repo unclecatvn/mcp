@@ -121,16 +121,14 @@ describe("parseEnv", () => {
 
 describe("validateAliasConfig", () => {
   it("throws ConfigError on missing host", () => {
-    expect(() =>
-      validateAliasConfig("x", { type: "postgresql" }, {})
-    ).toThrow(ConfigError);
+    expect(() => validateAliasConfig("x", { type: "postgresql" }, {})).toThrow(ConfigError);
   });
 
   it("accepts URL-only config", () => {
     const cfg = validateAliasConfig(
       "x",
       { type: "postgresql", url: "postgresql://u:p@h:5432/db" },
-      {}
+      {},
     );
     expect(cfg.host).toBe("h");
   });
