@@ -1,290 +1,327 @@
-# MCP Database Server
+# @unclecat/mcp-multi-db
 
-MCP Server hỗ trợ multi-database với phân tích query thông minh và tối ưu hóa AI cho MySQL/MariaDB, PostgreSQL, và SQL Server.
+> MCP server cho MySQL/MariaDB, PostgreSQL và SQL Server — với truy vấn parameterized, chế độ an toàn theo alias, timeout, và giới hạn số dòng.
 
-[🇬🇧 English](./README.md)
+📖 English: [README.md](./README.md) · 🛡️ [Security policy](./SECURITY.md)
 
-## 🎯 Tính năng (Version 1.1.0)
+## Tính năng
 
-- **Multi-Database Support**: MySQL/MariaDB, PostgreSQL, SQL Server
-- **Multiple Database Instances**: Hỗ trợ nhiều database cùng lúc với aliases
-- **Flexible Connection**: Connection string hoặc tham số riêng lẻ
-- **Environment Variables**: Cấu hình qua env vars
-- **Connection Pooling**: Tái sử dụng kết nối hiệu quả
-- **Auto Retry**: Tự động retry với exponential backoff (3 retries)
-- **AI-Powered Analysis**: Gợi ý tối ưu query và phát hiện anti-pattern
-- **Execution Plans**: Hỗ trợ EXPLAIN cho mọi database
-- **Query History**: Theo dõi query gần đây với performance metrics
-- **Database-Specific Detection**: Phân tích query theo từng loại database
-- **Function Detection**: Phát hiện hàm SQL được sử dụng trong query
+- **Chỉ truy vấn parameterized** — loại bỏ SQL injection ở tầng API.
+- **Mode theo alias** — `readonly` (mặc định), `readwrite`, `readwrite+ddl`.
+- **Timeout truy vấn** — driver-native, hard cap 600 s.
+- **Giới hạn số dòng + phát hiện overflow** — mặc định 10 000, override per-alias / per-request.
+- **SSL/TLS** — `disable` / `prefer` / `require` / `verify` (custom CA).
+- **Đa CSDL** — MySQL, MariaDB, PostgreSQL, SQL Server cùng một server, kết hợp tự do.
+- **Connection pooling, retry exponential backoff, logging có cấu trúc.**
 
-## 🛠️ MCP Tools
-
-| Tool | Mô tả |
-|------|-------|
-| `db_query` | Thực thi SQL với tracking performance và metadata |
-| `db_analyze_query` | Phân tích query bằng AI và gợi ý tối ưu |
-| `db_explain_query` | Lấy execution plan để phân tích performance |
-| `db_list_tables` | Liệt kê tất cả tables trong database |
-| `db_describe_table` | Xem cấu trúc table (columns, indexes, constraints) |
-| `db_query_history` | Xem lịch sử query với performance metrics |
-
-## 📦 Cài đặt
+## Cài đặt
 
 ```bash
-npm install
-# hoặc
-pnpm install
+npx @unclecat/mcp-multi-db
 ```
 
-## ⚙️ Cấu hình
+Yêu cầu Node ≥ 18.
 
-### Phương pháp 1: Nhiều Database với Connection Strings (Khuyến nghị)
+---
 
-```bash
-# Nhiều MySQL database với aliases
-MYSQL_CONNECTIONS="prod=mysql://user:pass@prod-host:3306/prod_db;dev=mysql://user:pass@dev-host:3306/dev_db"
+## Quick start
 
-# Nhiều PostgreSQL database
-POSTGRESQL_CONNECTIONS="main=postgresql://user:pass@host1:5432/main_db;analytics=postgresql://user:pass@host2:5432/analytics_db"
-```
-
-### Phương pháp 2: Nhiều Database với Variables Riêng
-
-```bash
-# MySQL database thứ nhất → alias: db1
-MYSQL_DB1_HOST=host1
-MYSQL_DB1_PORT=3306
-MYSQL_DB1_USER=user1
-MYSQL_DB1_PASSWORD=pass1
-MYSQL_DB1_DATABASE=db1
-
-# MySQL database thứ hai → alias: db2
-MYSQL_DB2_HOST=host2
-MYSQL_DB2_PORT=3306
-MYSQL_DB2_USER=user2
-MYSQL_DB2_PASSWORD=pass2
-MYSQL_DB2_DATABASE=db2
-```
-
-### Phương pháp 3: Single Database (Tương thích ngược)
-
-```bash
-# MySQL/MariaDB
-MYSQL_HOST=localhost
-MYSQL_PORT=3306
-MYSQL_USER=root
-MYSQL_PASSWORD=yourpassword
-MYSQL_DATABASE=mydatabase
-```
-
-## 🔧 Cursor MCP Configuration
+Config tối thiểu cho Claude Desktop, một PostgreSQL chỉ-đọc:
 
 ```json
 {
   "mcpServers": {
-    "db": {
-      "command": "node",
-      "args": ["/path/to/mcp/db/index.js"],
+    "multi-db": {
+      "command": "npx",
+      "args": ["-y", "@unclecat/mcp-multi-db"],
       "env": {
-        "MYSQL_DB1_HOST": "localhost",
-        "MYSQL_DB1_PORT": "3306",
-        "MYSQL_DB1_USER": "root",
-        "MYSQL_DB1_PASSWORD": "yourpassword",
-        "MYSQL_DB1_DATABASE": "mydatabase",
-
-        "POSTGRESQL_DB1_HOST": "localhost",
-        "POSTGRESQL_DB1_PORT": "5432",
-        "POSTGRESQL_DB1_USER": "postgres",
-        "POSTGRESQL_DB1_PASSWORD": "yourpassword",
-        "POSTGRESQL_DB1_DATABASE": "mydatabase"
+        "DB_PROD_TYPE": "postgresql",
+        "DB_PROD_URL": "postgresql://user:pass@host:5432/dbname"
       }
     }
   }
 }
 ```
 
-**Lưu ý:**
-- Database aliases: `MYSQL_DB1_*` → `db1`, `MYSQL_DB2_*` → `db2`, v.v.
+Vậy là xong. Khi không set `DB_PROD_MODE`, alias mặc định là **`readonly`** — chỉ cho SELECT/EXPLAIN/DESCRIBE/SHOW/USE. Mọi INSERT/UPDATE/DELETE/DDL đều bị chặn với error message ghi rõ env var nào cần set để cho phép.
 
-## 🚀 Sử Dụng
-
-### Workflow Khuyến Nghị Cho AI
+Khi server start, log sẽ in alias đã load:
 
 ```
-1. Hiểu schema     → db_describe_table
-2. Phân tích query  → db_analyze_query
-3. Kiểm tra plan    → db_explain_query
-4. Thực thi         → db_query
-5. Xem lịch sử      → db_query_history
+[info] event="loaded_aliases" count=1 aliases="prod(postgresql,readonly)"
+[info] event="ready"
 ```
 
-### Tool: `db_query`
+---
 
-Thực thi SQL query với tracking performance.
+## Mô hình cấu hình
 
-**Tham số:**
-- `type` (bắt buộc): Loại database (`mysql`, `mariadb`, `postgresql`, `sqlserver`)
-- `query` (bắt buộc): SQL query
-- `databaseAlias` (tùy chọn): Alias database (`db1`, `db2`, v.v.)
-- `connection` (tùy chọn): Override config kết nối
+Cấu hình qua biến môi trường. Mental model:
 
-**Response:** Kết quả + metadata (thời gian, rows, tables)
+> **Mỗi database bạn muốn truy cập là một *alias* có tên. Mỗi alias là một nhóm biến `DB_<ALIAS>_*`.**
+
+Tên alias gồm chữ in hoa, chữ số, dấu gạch dưới, bắt đầu bằng chữ cái (vd `PROD`, `DEV`, `DB1`, `LEGACY_2024`). Khi gọi tool, alias chuyển về lowercase (`databaseAlias: "prod"`).
+
+### Bắt buộc cho mỗi alias
+
+Phải set type và đủ thông tin kết nối:
+
+| Biến | Ý nghĩa | Ví dụ |
+|------|---------|-------|
+| `DB_<ALIAS>_TYPE` | Driver | `postgresql` \| `mysql` \| `mariadb` \| `sqlserver` |
+| `DB_<ALIAS>_URL` | Connection URL đầy đủ (nhanh gọn) | `postgresql://user:pass@host:5432/dbname` |
+
+Hoặc thay vì `_URL`, set từng field rời:
+
+| Biến | Ví dụ |
+|------|-------|
+| `DB_<ALIAS>_HOST` | `localhost` |
+| `DB_<ALIAS>_PORT` | `5432` (mặc định theo driver nếu bỏ qua) |
+| `DB_<ALIAS>_USER` | `appuser` |
+| `DB_<ALIAS>_PASSWORD` | `secret` |
+| `DB_<ALIAS>_DATABASE` | `mydb` |
+
+Có thể trộn: set `_URL` + override field cụ thể (`DB_PROD_URL` + `DB_PROD_PASSWORD`).
+
+### Tuỳ chọn — đều có default an toàn
+
+Mỗi biến đều có default an toàn; chỉ set những gì muốn đổi.
+
+| Biến | Mặc định | Mục đích |
+|------|----------|----------|
+| `DB_<ALIAS>_MODE` | `readonly` | Loại operation cho phép. Xem [Mô hình bảo mật](#mô-hình-bảo-mật). |
+| `DB_<ALIAS>_SSL` | `prefer` | TLS: `disable` / `prefer` / `require` / `verify`. |
+| `DB_<ALIAS>_CA_CERT` | — | PEM cert dạng string; dùng khi `SSL=verify` với CA tự ký. |
+| `DB_<ALIAS>_TIMEOUT_MS` | `30000` | Timeout per query (ms). Hard cap: 600 000. |
+| `DB_<ALIAS>_MAX_ROWS` | `10000` | Cap số dòng cho SELECT không có LIMIT. Hard cap: 1 000 000. |
+| `DB_<ALIAS>_POOL_MAX` | `5` | Pool connections tối đa. Hard cap: 100. |
+
+### Toàn server
+
+| Biến | Mặc định | Mục đích |
+|------|----------|----------|
+| `MCP_DB_LOG_LEVEL` | `info` | `debug` / `info` / `warn` / `error`. |
+
+Xem [.env.example](./.env.example) cho template chi tiết có comment.
 
 ---
 
-### Tool: `db_analyze_query`
+## Nhiều database cùng lúc
 
-Phân tích query bằng AI với gợi ý tối ưu.
+Để cấu hình thêm database, thêm các nhóm `DB_<ALIAS>_*` với tên alias khác nhau. Server load tất cả khi start, mỗi alias có pool, mode, timeout, row cap riêng. Có thể trộn nhiều DB type tự do.
 
-**Tham số:**
-- `type` (bắt buộc): Loại database
-- `query` (bắt buộc): SQL query
-
-**Phát hiện:**
-- Loại query (SELECT/INSERT/UPDATE/DELETE/DDL)
-- Anti-patterns (SELECT *, wildcard, thiếu index)
-- Vấn đề database-specific
-- Hàm được sử dụng
-
----
-
-### Tool: `db_explain_query`
-
-Lấy execution plan để phân tích performance.
-
-**Tham số:**
-- `type` (bắt buộc): Loại database
-- `query` (bắt buộc): SQL query
-- `databaseAlias` (tùy chọn): Alias database
-- `connection` (tùy chọn): Override kết nối
-
----
-
-### Tool: `db_list_tables`
-
-Liệt kê tất cả tables trong database.
-
----
-
-### Tool: `db_describe_table`
-
-Xem cấu trúc chi tiết table (columns, indexes, constraints).
-
----
-
-### Tool: `db_query_history`
-
-Xem lịch sử query với performance metrics.
-
----
-
-## 📝 Ví Dụ Sử Dụng
-
-### 1. Phân Trước Khi Thực Thi
+### Ví dụ — 3 databases với role khác nhau
 
 ```json
 {
-  "type": "mysql",
-  "query": "SELECT * FROM users WHERE name LIKE '%john%'"
-}
-```
+  "mcpServers": {
+    "multi-db": {
+      "command": "npx",
+      "args": ["-y", "@unclecat/mcp-multi-db"],
+      "env": {
+        "DB_PROD_TYPE": "postgresql",
+        "DB_PROD_URL": "postgresql://ro_user:ro_pass@prod-db.example.com:5432/main",
+        "DB_PROD_MODE": "readonly",
 
-### 2. Kiểm Tra Execution Plan
+        "DB_STAGING_TYPE": "mysql",
+        "DB_STAGING_HOST": "staging-db.example.com",
+        "DB_STAGING_PORT": "3306",
+        "DB_STAGING_USER": "appuser",
+        "DB_STAGING_PASSWORD": "stagingpass",
+        "DB_STAGING_DATABASE": "appdb",
+        "DB_STAGING_MODE": "readwrite",
 
-```json
-{
-  "type": "postgresql",
-  "query": "SELECT * FROM orders JOIN users ON orders.user_id = users.id"
-}
-```
-
-### 3. Thực Thi Với Metadata
-
-```json
-{
-  "type": "mysql",
-  "databaseAlias": "db1",
-  "query": "SELECT id, name FROM users LIMIT 10"
-}
-```
-
-## 🎯 Hướng Dẫn Database-Specific
-
-### MySQL/MariaDB
-- Limit: `LIMIT offset, count`
-- Index hints: `USE INDEX (index_name)` hoặc `FORCE INDEX`
-- Chú ý: filesort, temporary tables
-
-### PostgreSQL
-- Limit: `LIMIT count OFFSET offset`
-- Pagination >1000: Dùng keyset/cursor pagination
-- EXPLAIN: `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)`
-- ILIKE: Không dùng index (trừ khi dùng pg_trgm)
-
-### SQL Server
-- Limit: `OFFSET offset ROWS FETCH NEXT count ROWS ONLY`
-- Luôn dùng ORDER BY với TOP
-- Tránh NOLOCK (dùng READ COMMITTED SNAPSHOT thay thế)
-- String concat `+` có vấn đề với NULL
-
-## 📌 Anti-Patterns Được Phát Hiện
-
-| Pattern | Vấn Đề | Khắc Phục |
-|---------|-------|-----------|
-| `SELECT *` | Lấy tất cả columns | Chỉ định nghĩa columns cần thiết |
-| `LIKE '%value'` | Không dùng index | Full-text search, pg_trgm |
-| `DELETE/UPDATE` no WHERE | Nguy hiểm | Luôn thêm WHERE |
-| `OR col=x OR col=y` | Không hiệu quả | Dùng `IN` clause |
-| `NOT IN` | Chậm trên dataset lớn | Dùng `NOT EXISTS` |
-| High OFFSET (>1000) | Chậm pagination | Dùng keyset pagination |
-
-## 📊 Response Format
-
-Mọi response `db_query` đều bao gồm:
-
-```json
-{
-  "content": [
-    { "type": "text", "text": "[Kết quả Query]" },
-    { "type": "text", "text": "--- Query Metadata ---\nDatabase: mysql @ host:3306/db\nQuery Type: SELECT\nExecution Time: 45ms\nRows Returned: 10\nTables: users" }
-  ],
-  "_metadata": {
-    "databaseType": "mysql",
-    "executionTime": 45,
-    "success": true,
-    "rowCount": 10
+        "DB_LOCAL_TYPE": "postgresql",
+        "DB_LOCAL_URL": "postgresql://postgres:postgres@localhost:5432/devdb",
+        "DB_LOCAL_MODE": "readwrite+ddl"
+      }
+    }
   }
 }
 ```
 
-## 🔧 Troubleshooting
+Server load 3 aliases — `prod` (Postgres chỉ-đọc), `staging` (MySQL đọc-ghi), `local` (Postgres dev full quyền). Tool route theo alias:
 
-### MySQL/MariaDB
-- `ER_NO_DB_ERROR`: Chỉ định database trong connection hoặc dùng `USE database;`
-- `ER_BAD_DB_ERROR`: Kiểm tra với `SHOW DATABASES;`
+```js
+// Production bị ép readonly
+db_query({ databaseAlias: "prod",    sql: "SELECT * FROM users WHERE id = ?", params: [42] })
 
-### PostgreSQL
-- `3D000`: Database không tồn tại
-- `42P01`: Table không tồn tại
-- High OFFSET không hiệu quả → Dùng keyset pagination
+// Staging cho phép vì readwrite
+db_query({ databaseAlias: "staging", sql: "INSERT INTO logs(msg) VALUES (?)", params: ["test"] })
 
-### SQL Server
-- `Invalid object name`: Kiểm tra với `SELECT * FROM sys.tables;`
-- TOP không ORDER BY → Kết quả không xác định
+// Local cho phép vì readwrite+ddl
+db_query({ databaseAlias: "local",   sql: "CREATE TABLE t (id INT)" })
 
-## 🏃 Chạy Server
-
-```bash
-npm start
-# hoặc
-node index.js
+// Bị chặn — readonly không cho DELETE; error sẽ ghi rõ env var nào cần set
+db_query({ databaseAlias: "prod",    sql: "DELETE FROM users WHERE id = ?", params: [42] })
 ```
 
-## 📝 Giấy Phép
+### Override per-alias
 
-MIT
+Mỗi DB thường có nhu cầu khác nhau về timeout, row cap, pool size. Mỗi alias có settings độc lập:
 
-## 👤 Tác Giả
+```json
+{
+  "DB_PROD_TYPE": "postgresql",
+  "DB_PROD_URL": "...",
+  "DB_PROD_MODE": "readonly",
+  "DB_PROD_TIMEOUT_MS": "60000",
+  "DB_PROD_MAX_ROWS": "5000",
+  "DB_PROD_POOL_MAX": "10",
+  "DB_PROD_SSL": "verify",
+  "DB_PROD_CA_CERT": "-----BEGIN CERTIFICATE-----\n...",
 
-**UncleCat** - [@unclecatvn](https://github.com/unclecatvn)
+  "DB_LOGS_TYPE": "mysql",
+  "DB_LOGS_URL": "...",
+  "DB_LOGS_MODE": "readwrite",
+  "DB_LOGS_MAX_ROWS": "100000"
+}
+```
+
+### Quy tắc đặt tên alias
+
+- Pattern: `^[A-Z][A-Z0-9_]*$` — chữ in hoa đầu, sau đó chữ/số/gạch dưới.
+- Hợp lệ: `PROD`, `DB1`, `MAIN_RO`, `ANALYTICS_2024`.
+- Không hợp lệ: `1prod` (bắt đầu số), `prod-db` (gạch ngang), `prod.staging` (chấm), `Prod` (có chữ thường).
+- Khi gọi tool, alias là lowercase: `DB_PROD_*` ⇒ `databaseAlias: "prod"`.
+
+### Khi một alias config sai thì sao?
+
+Alias sai bị skip + log error; các alias còn lại vẫn load. Ví dụ `DB_BAD_MODE=godmode`:
+
+```
+[error] event="config_error" alias="bad" message="DB_BAD_MODE must be one of: readonly, readwrite, readwrite+ddl"
+[info]  event="loaded_aliases" count=2 aliases="prod(postgresql,readonly), staging(mysql,readwrite)"
+```
+
+Nếu **không** alias nào hợp lệ, server exit code 1 với error.
+
+### Kiểm tra alias đã load
+
+- Log dòng startup phía trên liệt kê tất cả alias kèm type và mode.
+- Đọc resource `db://aliases` để có JSON summary (không có secret).
+- Gọi `db_test_connection({ databaseAlias: "prod" })` để verify connectivity.
+
+---
+
+## Mô hình bảo mật
+
+Server chạy với credentials của DB. Để giảm rủi ro, mỗi alias có **mode** quy định loại SQL được phép.
+
+| Mode | Cho phép |
+|------|---------|
+| `readonly` *(mặc định)* | SELECT, EXPLAIN, DESCRIBE, SHOW, USE |
+| `readwrite` | Tất cả của readonly + INSERT, UPDATE, DELETE, MERGE |
+| `readwrite+ddl` | Tất cả của readwrite + CREATE, DROP, ALTER, TRUNCATE, GRANT, REVOKE, RENAME |
+
+**Mặc định là `readonly`.** Nếu không set `DB_<ALIAS>_MODE`, mọi write/DDL đều bị chặn. Bạn opt-in cho phép write/DDL từng alias bằng cách set explicit. Điều này bảo vệ production khỏi thay đổi vô tình bởi AI client.
+
+Statement không nhận diện được đều bị từ chối kể cả ở `readwrite+ddl` (deny-by-default).
+
+Khi query bị chặn, error message luôn kèm env var cần set:
+
+```
+[DB_PERMISSION_DENIED] Database 'prod' is in readonly mode. Operation 'DELETE'
+requires 'readwrite' mode. To allow: set DB_PROD_MODE=readwrite in environment.
+```
+
+Multi-statement (vd `SELECT ...; DELETE ...;`) áp mode strict nhất mà bất kỳ statement nào yêu cầu.
+
+### Truy vấn parameterized
+
+Tool `db_query` yêu cầu SQL với placeholder và `params` riêng. Không bao giờ ghép chuỗi user input vào SQL.
+
+```js
+// Vị trí — params là array
+{ databaseAlias: "prod", sql: "SELECT * FROM users WHERE id = ?", params: [42] }
+
+// Tên — params là object
+{ databaseAlias: "prod", sql: "SELECT * FROM users WHERE id = :id", params: { id: 42 } }
+```
+
+Server tự dịch `?` và `:name` sang placeholder native:
+
+| Dialect | `?` thành | `:name` thành |
+|---------|-----------|---------------|
+| PostgreSQL | `$1, $2, ...` | `$1, $2, ...` (dedup theo tên) |
+| MySQL / MariaDB | `?` (giữ nguyên) | `?` với value reorder |
+| SQL Server | `@p1, @p2, ...` | `@name` (giữ nguyên) |
+
+Placeholder bên trong string literal (`'...'`, `"..."`) và comment (`-- ...`, `/* ... */`) bị bỏ qua. Toán tử cast `::` của PostgreSQL được nhận diện và không bị coi là named placeholder. Số placeholder/param không khớp sẽ throw validation error.
+
+### Row cap và timeout
+
+Mặc định, SELECT không có `LIMIT`/`TOP`/`FETCH` được giới hạn 10 000 dòng. Server fetch `maxRows + 1` để phát hiện overflow; nếu chạm cap, response có `truncated: true` và hint thêm LIMIT hoặc tăng `maxRows`.
+
+Override per-query:
+
+```js
+db_query({
+  databaseAlias: "prod",
+  sql: "SELECT * FROM big_table",
+  maxRows: 50,
+  timeoutMs: 5000
+})
+```
+
+Override bị bound bởi alias config và hard cap (1 000 000 rows, 600 000 ms).
+
+---
+
+## Tools
+
+| Tool | Inputs | Mô tả |
+|------|--------|-------|
+| `db_query` | `databaseAlias`, `sql`, `params?`, `maxRows?`, `timeoutMs?` | Chạy parameterized SQL. |
+| `db_list_tables` | `databaseAlias`, `schema?` | Liệt kê tables (filter theo schema nếu có). |
+| `db_describe_table` | `databaseAlias`, `tableName`, `schema?` | Hiện columns và indexes của table. |
+| `db_test_connection` | `databaseAlias` | Healthcheck alias. |
+| `db_query_history` | `databaseAlias?`, `limit?` | Trả về N query gần nhất (đã sanitize, giữ tối đa 50). |
+| `db_explain_query` | `databaseAlias`, `sql`, `params?` | Chạy EXPLAIN-equivalent và trả plan. |
+
+## Resources
+
+- `db://security-guide` — giải thích về modes và parameterized queries (Markdown).
+- `db://aliases` — tóm tắt aliases đã load (JSON, không có secret).
+
+---
+
+## Migration từ v1
+
+Đây là bản public đầu tiên. v1.x raw-query API (chưa publish) đã được thay. Mapping config:
+
+| v1 (đã bỏ) | v2 |
+|-----------|----|
+| `db_query({ type, query: 'SELECT...' })` | `db_query({ databaseAlias, sql, params })` |
+| `MYSQL_CONNECTIONS="prod=mysql://..."` | `DB_PROD_TYPE=mysql` + `DB_PROD_URL=mysql://...` |
+| `MYSQL_DB1_HOST=h1` (numbered) | `DB_DB1_TYPE=mysql` + `DB_DB1_HOST=h1` |
+| `MYSQL_HOST=...` (single legacy) | `DB_PROD_TYPE=mysql` + `DB_PROD_HOST=...` |
+| Override `connection: {...}` qua tool | Đã bỏ. Chỉ cấu hình qua env. |
+
+Behavior mặc định cũng đổi: v2 **mặc định readonly** — phải explicit set `DB_<ALIAS>_MODE=readwrite` (hoặc `readwrite+ddl`) mới cho phép thay đổi data.
+
+---
+
+## Troubleshooting
+
+| Error code | Ý nghĩa | Cách xử lý |
+|------------|---------|-----------|
+| `DB_PERMISSION_DENIED` | Alias mode không cho phép operation. | Set `DB_<ALIAS>_MODE` cao hơn. Error message ghi rõ tên var. |
+| `DB_TIMEOUT` | Query vượt timeout. | Truyền `timeoutMs` cao hơn per request, hoặc tăng `DB_<ALIAS>_TIMEOUT_MS`. Hard cap 600 000. |
+| `DB_RESULT_TOO_LARGE` | Row cap bị vượt. | Thêm LIMIT vào query, hoặc truyền `maxRows` cao hơn, hoặc tăng `DB_<ALIAS>_MAX_ROWS`. |
+| `DB_CONNECTION_FAILED` | Không kết nối được DB. | Kiểm tra host/port/credentials. Server retry tối đa 3 lần với backoff. |
+| `DB_VALIDATION_FAILED` ở identifier | `databaseAlias`, `tableName`, `schema` không match `^[A-Za-z_][A-Za-z0-9_]*$`. | Dùng identifier đơn giản (không quote, gạch ngang, chấm). |
+| `DB_CONFIG_INVALID` (trong startup log) | Một alias có env var sai. | Đọc message — nó nêu rõ field và giá trị hợp lệ. Aliases khác vẫn hoạt động. |
+| `event="no_valid_aliases"` (server exit 1) | Không có alias nào được cấu hình. | Set ít nhất một `DB_<ALIAS>_TYPE` và host/URL. |
+
+Nếu không chắc config đúng chưa, kiểm tra log startup `event="loaded_aliases"` hoặc đọc resource `db://aliases` — cả hai đều liệt kê đầy đủ.
+
+---
+
+## Đóng góp
+
+Xem [CONTRIBUTING.md](../CONTRIBUTING.md) ở root monorepo.
+
+## License
+
+MIT — xem [LICENSE](../LICENSE).
