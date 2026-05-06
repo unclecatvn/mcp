@@ -1,0 +1,8 @@
+test/
+*.test.js
+.env
+.env.example
+node_modules/
+coverage/
+.changeset/
+README.vi.md.bak
