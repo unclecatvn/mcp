@@ -50,27 +50,32 @@ export class ToolHandlers {
           properties: {
             databaseAlias: {
               type: "string",
-              description: "Alias name (lowercase) of a database configured via DB_<ALIAS>_* env vars (e.g., 'prod').",
+              description:
+                "Alias name (lowercase) of a database configured via DB_<ALIAS>_* env vars (e.g., 'prod').",
             },
             sql: {
               type: "string",
-              description: "SQL statement with ? (positional) or :name (named) placeholders. Identifiers, string literals, and comments are parsed safely.",
+              description:
+                "SQL statement with ? (positional) or :name (named) placeholders. Identifiers, string literals, and comments are parsed safely.",
             },
             params: {
-              description: "Array of values for positional ? placeholders, OR object keyed by name for :name placeholders. Omit when SQL has no placeholders.",
+              description:
+                "Array of values for positional ? placeholders, OR object keyed by name for :name placeholders. Omit when SQL has no placeholders.",
               oneOf: [{ type: "array" }, { type: "object" }],
             },
             maxRows: {
               type: "integer",
               minimum: 1,
               maximum: 1000000,
-              description: "Override the alias default row cap for this query (clamped to alias maxRows and the 1,000,000 hard cap).",
+              description:
+                "Override the alias default row cap for this query (clamped to alias maxRows and the 1,000,000 hard cap).",
             },
             timeoutMs: {
               type: "integer",
               minimum: 1,
               maximum: 600000,
-              description: "Override the alias default query timeout in milliseconds (clamped to the 600,000 hard cap).",
+              description:
+                "Override the alias default query timeout in milliseconds (clamped to the 600,000 hard cap).",
             },
           },
           required: ["databaseAlias", "sql"],
@@ -95,7 +100,8 @@ export class ToolHandlers {
             },
             schema: {
               type: "string",
-              description: "Optional schema/owner to filter (e.g., 'public' for PostgreSQL, 'dbo' for SQL Server). When omitted: PostgreSQL excludes system schemas, MySQL uses the current DATABASE().",
+              description:
+                "Optional schema/owner to filter (e.g., 'public' for PostgreSQL, 'dbo' for SQL Server). When omitted: PostgreSQL excludes system schemas, MySQL uses the current DATABASE().",
             },
           },
           required: ["databaseAlias"],
@@ -122,7 +128,8 @@ export class ToolHandlers {
             },
             schema: {
               type: "string",
-              description: "Optional schema/owner. Required if the table is not in the connection's default schema.",
+              description:
+                "Optional schema/owner. Required if the table is not in the connection's default schema.",
             },
           },
           required: ["databaseAlias", "tableName"],
@@ -159,7 +166,8 @@ export class ToolHandlers {
           properties: {
             databaseAlias: {
               type: "string",
-              description: "Optional. Filter history to a single alias. Omit to return entries across all aliases.",
+              description:
+                "Optional. Filter history to a single alias. Omit to return entries across all aliases.",
             },
             limit: {
               type: "integer",
@@ -187,7 +195,8 @@ export class ToolHandlers {
             databaseAlias: { type: "string", description: "Alias name (lowercase)." },
             sql: {
               type: "string",
-              description: "SQL to explain (without the EXPLAIN keyword — the server prepends it). Supports ? and :name placeholders.",
+              description:
+                "SQL to explain (without the EXPLAIN keyword — the server prepends it). Supports ? and :name placeholders.",
             },
             params: {
               description: "Same shape as db_query: array for ?, object for :name.",
