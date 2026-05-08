@@ -1,31 +1,29 @@
 # @unclecat/mcp-multi-db
 
-## 3.0.1
+All notable changes to this project are documented in this file.
 
-### Patch Changes
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-- 13ac8d9: Expand MCP tool descriptions to give AI clients clearer guidance.
+## [Unreleased]
 
-  Each tool now documents purpose, when to use it, mode/permission constraints, and the response shape. Per-property descriptions explain expected formats (placeholder syntax, schema filters, etc.).
-  - `db_query` — placeholder examples, mode → operation matrix, auto-LIMIT behavior, return shape.
-  - `db_list_tables` — schema filter behavior across drivers, return shape.
-  - `db_describe_table` — driver-specific index shapes, identifier validation.
-  - `db_test_connection` — when to use (troubleshoot, audit), return shape.
-  - `db_query_history` — privacy note (only metadata stored, no SQL/params), retention cap.
-  - `db_explain_query` — dialect-specific handling, mode requirements.
+### Added
 
-  No API changes — descriptive metadata only.
+- No changes yet.
 
-- ca4628c: Expand MCP tool descriptions with purpose, constraints, and return shapes for better AI client guidance.
+## [0.0.1] - 2026-05-08
 
-## 3.0.0
+### Added
 
-### Major Changes
+- Initial public baseline release for the package.
+- MCP server support for MySQL/MariaDB, PostgreSQL, and SQL Server.
+- Parameterized query handling with alias-based configuration (`DB_<ALIAS>_*`).
+- Safety modes per alias: `readonly`, `readwrite`, and `readwrite+ddl`.
+- Core project documentation: `README.md`, `README.vi.md`, `SECURITY.md`, and `.env.example`.
 
-- bcef4d3: First public release. Hardened, parameterized MCP server for MySQL/MariaDB, PostgreSQL, and SQL Server.
-  - New parameterized API (`db_query` requires `sql` + `params`); raw-query API removed.
-  - Per-alias safety modes: `readonly` (default), `readwrite`, `readwrite+ddl`.
-  - Query timeout, row cap with overflow detection, and proper SSL/TLS modes.
-  - Strict zod validation of all tool inputs; unknown statements rejected by default.
-  - New env config schema: `DB_<ALIAS>_*`.
-  - Bilingual docs (EN canonical, VI sync), `SECURITY.md`, `.env.example`.
+### Changed
+
+- Versioning and release process normalized to SemVer with `vX.Y.Z` tag naming.
+
+[Unreleased]: https://github.com/unclecatvn/mcp/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/unclecatvn/mcp/releases/tag/v0.0.1

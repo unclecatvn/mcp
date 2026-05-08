@@ -21,11 +21,14 @@ jobs:
           filters: |
             db:
               - 'db/**'
+              - '.changeset/**'
               - 'pnpm-workspace.yaml'
+              - 'pnpm-lock.yaml'
               - 'package.json'
               - 'eslint.config.js'
               - '.prettierrc.json'
               - '.github/workflows/ci.yml'
+              - '.github/workflows/release.yml'
 
   db:
     needs: detect
