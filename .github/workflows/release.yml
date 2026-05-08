@@ -68,11 +68,11 @@ jobs:
           )"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release edit "$TAG" \
-              --title "Release ${TAG}" \
+              --title "${TAG}" \
               --notes "$NOTES"
           else
             gh release create "$TAG" \
-              --title "Release ${TAG}" \
+              --title "${TAG}" \
               --notes "$NOTES" \
               --target "${GITHUB_SHA}"
           fi
