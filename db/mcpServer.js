@@ -1,5 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { createRequire } from "node:module";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -12,6 +13,8 @@ import { ConnectionRegistry } from "./lib/connectionManager.js";
 import { ToolHandlers } from "./lib/toolHandlers.js";
 import { ResourceHandlers } from "./lib/resourceHandlers.js";
 
+const require = createRequire(import.meta.url);
+const { name: SERVER_NAME, version: SERVER_VERSION } = require("./package.json");
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
 
 function makeLogger() {
@@ -62,7 +65,7 @@ export class MultiDatabaseMCPServer {
     this.resources = new ResourceHandlers(this.registry);
 
     this.server = new Server(
-      { name: "@unclecat/mcp-multi-db", version: "2.0.0" },
+      { name: SERVER_NAME, version: SERVER_VERSION },
       { capabilities: { tools: {}, resources: {} } },
     );
 
