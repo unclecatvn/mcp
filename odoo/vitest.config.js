@@ -8,13 +8,11 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov", "html"],
-      include: [
-        "lib/config.js",
-        "lib/errors.js",
-        "lib/validators.js",
-        "lib/client.js",
-        "lib/clientRegistry.js",
-        "lib/toolHandlers.js",
+      include: ["lib/**/*.js"],
+      exclude: [
+        "**/*.test.js",
+        // instructions.js is a static cheatsheet string — no executable logic to cover
+        "lib/instructions.js",
       ],
       thresholds: {
         lines: 80,

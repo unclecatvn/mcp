@@ -8,14 +8,14 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov", "html"],
-      include: [
-        "lib/config.js",
-        "lib/errors.js",
-        "lib/validators.js",
-        "lib/queryAnalyzer.js",
-        "lib/modeEnforcer.js",
-        "lib/limits.js",
-        "lib/paramConverter.js",
+      include: ["lib/**/*.js", "drivers/**/*.js"],
+      exclude: [
+        "**/*.test.js",
+        // TODO: write tests for these and drop from exclude
+        "lib/connectionManager.js",
+        "lib/resourceHandlers.js",
+        "lib/toolHandlers.js",
+        "drivers/**",
       ],
       thresholds: {
         lines: 80,
