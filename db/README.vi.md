@@ -2,7 +2,7 @@
 
 > MCP server cho MySQL/MariaDB, PostgreSQL và SQL Server — với truy vấn parameterized, chế độ an toàn theo alias, timeout, và giới hạn số dòng.
 
-📖 English: [README.md](./README.md) · 🛡️ [Security policy](./SECURITY.md)
+📖 English: [README.md](./README.md) · 🛡️ [Security policy](../SECURITY.md)
 
 ## Tính năng
 
@@ -324,4 +324,4 @@ Xem [CONTRIBUTING.md](../CONTRIBUTING.md) ở root monorepo.
 
 ## License
 
-MIT — xem [LICENSE](../LICENSE).
+MIT — xem [LICENSE](./LICENSE).

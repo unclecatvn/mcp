@@ -4,9 +4,9 @@
 
 [![CI](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@unclecat/mcp-multi-db.svg)](https://www.npmjs.com/package/@unclecat/mcp-multi-db)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-📖 Tiếng Việt: [README.vi.md](./README.vi.md) · 🛡️ [Security policy](./SECURITY.md)
+📖 Tiếng Việt: [README.vi.md](./README.vi.md) · 🛡️ [Security policy](../SECURITY.md)
 
 ## Features
 
@@ -328,4 +328,4 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) at the monorepo root.
 
 ## License
 
-MIT — see [LICENSE](../LICENSE).
+MIT — see [LICENSE](./LICENSE).
