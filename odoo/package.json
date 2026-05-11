@@ -1,0 +1,66 @@
+{
+  "name": "@unclecat/mcp-odoo",
+  "version": "0.0.1",
+  "description": "MCP server for Odoo v18+ via JSON-RPC. Multi-instance support, API key or password auth, generic CRUD tools that let Claude compose workflows on any Odoo model.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "type": "module",
+  "bin": {
+    "mcp-odoo": "index.js"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "mcpServer.js",
+    "lib/",
+    "README.md",
+    "README.vi.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    ".env.example"
+  ],
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --inspect index.js",
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "odoo",
+    "odoo18",
+    "json-rpc",
+    "erp",
+    "claude"
+  ],
+  "author": "UncleCat <quangnh.tkcn@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unclecatvn/mcp.git",
+    "directory": "odoo"
+  },
+  "homepage": "https://github.com/unclecatvn/mcp/tree/master/odoo#readme",
+  "bugs": {
+    "url": "https://github.com/unclecatvn/mcp/issues"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.1",
+    "vitest": "^2.1.1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
