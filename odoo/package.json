@@ -1,19 +1,18 @@
 {
-  "name": "@unclecat/mcp-multi-db",
+  "name": "@unclecat/mcp-odoo",
   "version": "0.0.1",
-  "description": "MCP server for MySQL/MariaDB, PostgreSQL, and SQL Server with parameterized queries, per-alias safety modes, and bilingual docs.",
+  "description": "MCP server for Odoo v18+ via JSON-RPC. Multi-instance support, API key or password auth, generic CRUD tools that let Claude compose workflows on any Odoo model.",
   "main": "index.js",
   "types": "index.d.ts",
   "type": "module",
   "bin": {
-    "mcp-multi-db": "index.js"
+    "mcp-odoo": "index.js"
   },
   "files": [
     "index.js",
     "index.d.ts",
     "mcpServer.js",
     "lib/",
-    "drivers/",
     "README.md",
     "README.vi.md",
     "CHANGELOG.md",
@@ -33,30 +32,25 @@
   "keywords": [
     "mcp",
     "model-context-protocol",
-    "mysql",
-    "mariadb",
-    "postgresql",
-    "sqlserver",
-    "database",
-    "sql",
-    "parameterized-queries"
+    "odoo",
+    "odoo18",
+    "json-rpc",
+    "erp",
+    "claude"
   ],
   "author": "UncleCat <quangnh.tkcn@gmail.com>",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/unclecatvn/mcp.git",
-    "directory": "db"
+    "directory": "odoo"
   },
-  "homepage": "https://github.com/unclecatvn/mcp/tree/master/db#readme",
+  "homepage": "https://github.com/unclecatvn/mcp/tree/master/odoo#readme",
   "bugs": {
     "url": "https://github.com/unclecatvn/mcp/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "mssql": "^10.0.4",
-    "mysql2": "^3.6.5",
-    "pg": "^8.16.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {

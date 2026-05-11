@@ -8,14 +8,11 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov", "html"],
-      include: ["lib/**/*.js", "drivers/**/*.js"],
+      include: ["lib/**/*.js"],
       exclude: [
         "**/*.test.js",
-        // TODO: write tests for these and drop from exclude
-        "lib/connectionManager.js",
-        "lib/resourceHandlers.js",
-        "lib/toolHandlers.js",
-        "drivers/**",
+        // instructions.js is a static cheatsheet string — no executable logic to cover
+        "lib/instructions.js",
       ],
       thresholds: {
         lines: 80,

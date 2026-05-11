@@ -1,4 +1,5 @@
 name: Release
+
 on:
   push:
     branches: [master]
@@ -8,6 +9,7 @@ concurrency:
 
 jobs:
   release:
+    name: Release packages
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -17,64 +19,38 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
       - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           registry-url: "https://registry.npmjs.org"
+
       - run: pnpm install --frozen-lockfile
-      - name: Quality gate before publish
+
+      - name: Quality gate (all packages)
         run: |
-          pnpm --filter @unclecat/mcp-multi-db lint
-          pnpm --filter @unclecat/mcp-multi-db format
-          pnpm --filter @unclecat/mcp-multi-db test
+          pnpm -r lint
+          pnpm -r format
+          pnpm -r test
           pnpm audit --audit-level=high
+
       - name: Verify npm auth
         run: npm whoami
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - id: changesets
         uses: changesets/action@v1
         with:
           publish: pnpm release
-          createGithubReleases: false
+          createGithubReleases: true
           commit: "chore(release): version packages"
           title: "chore(release): version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      - name: Create GitHub Release (SemVer tag)
-        if: steps.changesets.outputs.published == 'true'
-        run: |
-          VERSION=$(node -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('./db/package.json','utf8')); process.stdout.write(p.version)")
-          TAG="v${VERSION}"
-          NOTES="$(cat <<EOF
-          ## Highlights
-          - Automated release for ${TAG}.
-
-          ## Package
-          - \`@unclecat/mcp-multi-db@${VERSION}\`
-
-          ## Verification
-          - Published via Changesets release workflow.
-          - npm authentication verified with \`npm whoami\`.
-
-          ## Links
-          - Package: https://www.npmjs.com/package/@unclecat/mcp-multi-db
-          - Commit: https://github.com/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}
-          EOF
-          )"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" \
-              --title "${TAG}" \
-              --notes "$NOTES"
-          else
-            gh release create "$TAG" \
-              --title "${TAG}" \
-              --notes "$NOTES" \
-              --target "${GITHUB_SHA}"
-          fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
