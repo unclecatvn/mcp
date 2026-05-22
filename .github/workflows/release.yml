@@ -14,11 +14,11 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      id-token: write
+      id-token: write # Required for npm Trusted Publishers (OIDC)
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # full history needed for changeset diff detection
 
       - uses: pnpm/action-setup@v4
 
@@ -26,7 +26,9 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          registry-url: "https://registry.npmjs.org"
+
+      - name: Upgrade npm CLI (≥11.5.1 required for Trusted Publishers OIDC)
+        run: npm install -g npm@latest
 
       - run: pnpm install --frozen-lockfile
 
@@ -37,10 +39,50 @@ jobs:
           pnpm -r test
           pnpm audit --audit-level=high
 
-      - name: Verify npm auth
-        run: npm whoami
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Auto-generate changeset for packages with code changes
+        run: |
+          set -euo pipefail
+
+          # Skip if this commit IS a version-bump from changesets/action (avoid loop)
+          if [[ "$(git log -1 --pretty=%s)" == "chore(release): version packages" ]]; then
+            echo "Version bump commit — skipping auto-generation"
+            exit 0
+          fi
+
+          # Skip if any pending changeset already exists (manual or prior auto)
+          if find .changeset -maxdepth 1 -name '*.md' ! -name 'README.md' | grep -q .; then
+            echo "Pending changeset(s) found — skipping auto-generation"
+            exit 0
+          fi
+
+          # Detect changed workspace packages between this commit and its first parent
+          base=$(git rev-parse HEAD^1)
+          changed_dirs=$(git diff --name-only "$base" HEAD \
+            | awk -F/ '$1=="db" || $1=="odoo" {print $1}' \
+            | sort -u)
+
+          if [ -z "$changed_dirs" ]; then
+            echo "No workspace package files changed — no release this run"
+            exit 0
+          fi
+
+          short_sha=$(git rev-parse --short HEAD)
+          summary=$(git log -1 --pretty=%s)
+          file=".changeset/auto-${short_sha}.md"
+
+          {
+            echo "---"
+            for dir in $changed_dirs; do
+              pkg_name=$(node -p "require('./${dir}/package.json').name")
+              echo "\"${pkg_name}\": patch"
+            done
+            echo "---"
+            echo ""
+            echo "$summary"
+          } > "$file"
+
+          echo "=== Generated $file ==="
+          cat "$file"
 
       - id: changesets
         uses: changesets/action@v1
@@ -51,6 +93,14 @@ jobs:
           title: "chore(release): version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          # No NPM_TOKEN / NODE_AUTH_TOKEN — npm Trusted Publishers uses OIDC.
           NPM_CONFIG_PROVENANCE: "true"
+
+      - name: Enable auto-merge on Version Packages PR
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr merge ${{ steps.changesets.outputs.pullRequestNumber }} \
+            --squash --auto --repo ${{ github.repository }} \
+            || echo "::warning::auto-merge could not be enabled (repo settings may not allow it). Merge the Version Packages PR manually."
