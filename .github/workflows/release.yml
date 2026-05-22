@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     branches: [master]
+  workflow_dispatch: # escape hatch: maintainer can trigger publish manually
 
 concurrency:
   group: release-${{ github.ref }}
@@ -53,9 +54,19 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Skip if this commit IS a version-bump from changesets/action (avoid loop)
-          if [[ "$(git log -1 --pretty=%s)" == "chore(release): version packages" ]]; then
+          last_subject="$(git log -1 --pretty=%s)"
+
+          # Skip the squash-merge case: HEAD is the version-bump commit itself.
+          if [[ "$last_subject" == "chore(release): version packages" ]]; then
             echo "Version bump commit — skipping auto-generation"
+            exit 0
+          fi
+
+          # Skip the merge-commit case: HEAD merged the changeset-release/* branch
+          # (GitHub default subject: "Merge pull request #N from <owner>/changeset-release/<branch>").
+          # Without this, every Version Packages PR merge spawns another changeset → infinite loop.
+          if [[ "$last_subject" == *"changeset-release/"* ]]; then
+            echo "Merge of Version Packages PR — skipping auto-generation"
             exit 0
           fi
 
