@@ -1,5 +1,11 @@
 # @unclecat/mcp-multi-db
 
+## 0.0.4
+
+### Patch Changes
+
+- Merge pull request #15 from unclecatvn/docs/readme-restructure
+
 ## 0.0.3
 
 ### Patch Changes
