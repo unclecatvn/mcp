@@ -106,11 +106,5 @@ jobs:
           # No NPM_TOKEN / NODE_AUTH_TOKEN — npm Trusted Publishers uses OIDC.
           NPM_CONFIG_PROVENANCE: "true"
 
-      - name: Enable auto-merge on Version Packages PR
-        if: steps.changesets.outputs.pullRequestNumber != ''
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr merge ${{ steps.changesets.outputs.pullRequestNumber }} \
-            --squash --auto --repo ${{ github.repository }} \
-            || echo "::warning::auto-merge could not be enabled (repo settings may not allow it). Merge the Version Packages PR manually."
+      # "Version Packages" PR is merged manually by maintainer.
+      # The Release workflow runs again on that merge commit and publishes.
