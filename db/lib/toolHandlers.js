@@ -16,18 +16,83 @@ import { formatErrorForMcp } from "./errors.js";
 const HISTORY_MAX = 50;
 
 export class ToolHandlers {
-  /** @param {import("./connectionManager.js").ConnectionRegistry} registry */
-  constructor(registry) {
+  /**
+   * @param {import("./connectionManager.js").ConnectionRegistry} registry
+   * @param {{ defaultAlias?: string }} [opts]
+   */
+  constructor(registry, opts = {}) {
     this.registry = registry;
     this.history = [];
+    this.defaultAlias = opts.defaultAlias;
+  }
+
+  _buildRoster() {
+    const names = this.registry.listAliases();
+    return names.map((name) => {
+      const c = this.registry.getConfig(name);
+      return {
+        name,
+        type: c.type,
+        mode: c.mode,
+        displayName: c.displayName,
+        description: c.description,
+        tablesHint: c.tablesHint,
+      };
+    });
+  }
+
+  _rosterBlock() {
+    const roster = this._buildRoster();
+    if (roster.length === 0) return "";
+    const lines = ["Available aliases:"];
+    for (const a of roster) {
+      const label = a.displayName ? ` — ${a.displayName}` : "";
+      lines.push(`  • ${a.name}${label} [${a.type}, ${a.mode}]`);
+      if (a.description) lines.push(`    ${a.description}`);
+      if (a.tablesHint && a.tablesHint.length > 0) {
+        lines.push(`    Likely tables: ${a.tablesHint.join(", ")}.`);
+      }
+    }
+    if (this.defaultAlias) {
+      lines.push("");
+      lines.push(`Default alias if unspecified: ${this.defaultAlias}`);
+    }
+    lines.push("");
+    return lines.join("\n");
+  }
+
+  _aliasEnum() {
+    return this.registry.listAliases();
+  }
+
+  _aliasFieldDescription(baseText) {
+    const roster = this._buildRoster();
+    if (roster.length === 0) return baseText;
+    const inline = roster
+      .map((a) => {
+        const label = a.displayName ? `=${a.displayName}` : "";
+        return `${a.name}${label} (${a.mode})`;
+      })
+      .join(". ");
+    return `${baseText} Available: ${inline}.`;
   }
 
   /** Tool list shipped to the MCP client. */
   toolDescriptors() {
+    const rosterBlock = this._rosterBlock();
+    const aliasEnum = this._aliasEnum();
+    const aliasProp = (baseDescription) => ({
+      type: "string",
+      enum: aliasEnum,
+      description: this._aliasFieldDescription(baseDescription),
+    });
+    const prepend = (lines) =>
+      rosterBlock ? rosterBlock + "\n" + lines.join("\n") : lines.join("\n");
+
     return [
       {
         name: "db_query",
-        description: [
+        description: prepend([
           "Execute a parameterized SQL query against a configured database alias.",
           "Use this for any data retrieval (SELECT) or mutation (INSERT/UPDATE/DELETE).",
           "",
@@ -44,15 +109,11 @@ export class ToolHandlers {
           "SELECT without LIMIT is auto-capped to alias maxRows (default 10000).",
           "Response includes truncated:true when the cap is hit.",
           "Returns: { rows, rowCount, columns, elapsedMs, retries, truncated, hint? }.",
-        ].join("\n"),
+        ]),
         inputSchema: {
           type: "object",
           properties: {
-            databaseAlias: {
-              type: "string",
-              description:
-                "Alias name (lowercase) of a database configured via DB_<ALIAS>_* env vars (e.g., 'prod').",
-            },
+            databaseAlias: aliasProp("Alias name (lowercase) of a configured database."),
             sql: {
               type: "string",
               description:
@@ -84,20 +145,19 @@ export class ToolHandlers {
       },
       {
         name: "db_list_tables",
-        description: [
+        description: prepend([
           "List tables visible to the alias's user, optionally filtered to a single schema.",
           "Use this for schema discovery — e.g., before db_describe_table or when answering 'what tables exist'.",
           "",
           "Returns: { tables: [{ name, schema }, ...] } sorted by schema then name.",
           "Allowed in any mode (read-only metadata).",
-        ].join("\n"),
+        ]),
         inputSchema: {
           type: "object",
           properties: {
-            databaseAlias: {
-              type: "string",
-              description: "Alias name (lowercase). The DB type is inferred from the alias.",
-            },
+            databaseAlias: aliasProp(
+              "Alias name (lowercase). The DB type is inferred from the alias.",
+            ),
             schema: {
               type: "string",
               description:
@@ -110,18 +170,18 @@ export class ToolHandlers {
       },
       {
         name: "db_describe_table",
-        description: [
+        description: prepend([
           "Return the columns and indexes of a single table.",
           "Use this before writing a query to confirm column names, types, and which fields are indexed.",
           "",
           "Returns: { columns: [{column_name, data_type, is_nullable, column_default}, ...], indexes: [...] }.",
           "Index shape is driver-specific (PostgreSQL: indexname+indexdef; MySQL: index_name+column_name+non_unique; SQL Server: index_name+column_name+is_unique).",
           "Allowed in any mode.",
-        ].join("\n"),
+        ]),
         inputSchema: {
           type: "object",
           properties: {
-            databaseAlias: { type: "string", description: "Alias name (lowercase)." },
+            databaseAlias: aliasProp("Alias name (lowercase)."),
             tableName: {
               type: "string",
               description: "Plain table name without quotes. Must match ^[A-Za-z_][A-Za-z0-9_]*$.",
@@ -138,16 +198,16 @@ export class ToolHandlers {
       },
       {
         name: "db_test_connection",
-        description: [
+        description: prepend([
           "Verify that the alias's database is reachable and credentials are valid.",
           "Use this to troubleshoot DB_CONNECTION_FAILED errors, confirm a new alias is configured correctly, or sanity-check before a long workflow.",
           "",
           "Runs a lightweight 'SELECT 1' with a 5s timeout and returns { ok: true|false }.",
-        ].join("\n"),
+        ]),
         inputSchema: {
           type: "object",
           properties: {
-            databaseAlias: { type: "string", description: "Alias name (lowercase)." },
+            databaseAlias: aliasProp("Alias name (lowercase)."),
           },
           required: ["databaseAlias"],
           additionalProperties: false,
@@ -155,19 +215,21 @@ export class ToolHandlers {
       },
       {
         name: "db_query_history",
-        description: [
+        description: prepend([
           "Return recent queries executed by this MCP server session, optionally filtered by alias.",
           "Use this to review what was run during the current session, audit query times, or recover the last query type when investigating an unexpected result.",
           "",
           "History is in-memory only (lost on server restart) and capped at 50 entries — no SQL text or params are stored, only metadata: { alias, type, elapsedMs, rowCount, truncated, success, ts }.",
-        ].join("\n"),
+        ]),
         inputSchema: {
           type: "object",
           properties: {
             databaseAlias: {
               type: "string",
-              description:
+              enum: aliasEnum,
+              description: this._aliasFieldDescription(
                 "Optional. Filter history to a single alias. Omit to return entries across all aliases.",
+              ),
             },
             limit: {
               type: "integer",
@@ -181,18 +243,18 @@ export class ToolHandlers {
       },
       {
         name: "db_explain_query",
-        description: [
+        description: prepend([
           "Run the dialect's EXPLAIN equivalent on a parameterized query and return the plan rows.",
           "Use this to investigate why a query is slow, check whether an index is used, or estimate cost — WITHOUT executing the query for real.",
           "",
           "PostgreSQL: prepends 'EXPLAIN '. MySQL/MariaDB: prepends 'EXPLAIN '. SQL Server: passes the SQL through (use SET SHOWPLAN_TEXT ON or SET STATISTICS PROFILE manually if needed).",
           "Same parameterized API and mode rules as db_query — readonly is sufficient.",
           "Returns the plan rows formatted by the driver; structure varies by DB.",
-        ].join("\n"),
+        ]),
         inputSchema: {
           type: "object",
           properties: {
-            databaseAlias: { type: "string", description: "Alias name (lowercase)." },
+            databaseAlias: aliasProp("Alias name (lowercase)."),
             sql: {
               type: "string",
               description:

@@ -54,6 +54,71 @@ Khi server start, log sẽ in alias đã load:
 
 ---
 
+## Cấu hình bằng file JSON (khuyến nghị khi có >1 DB)
+
+Khi anh có nhiều hơn một database — hoặc muốn AI client biết mỗi DB dùng cho việc gì — hãy trỏ server vào 1 file JSON qua biến môi trường `MCP_DB_CONFIG`. Cách này thay thế hoàn toàn block `DB_<ALIAS>_*` env var, viết gọn 1 block cho mỗi alias.
+
+```json
+{
+  "mcpServers": {
+    "multi-db": {
+      "command": "npx",
+      "args": ["-y", "@unclecat/mcp-multi-db"],
+      "env": {
+        "MCP_DB_CONFIG": "/Users/you/mcp-db.config.json"
+      }
+    }
+  }
+}
+```
+
+File config liệt kê từng alias 1 lần với tất cả field nằm trong 1 block:
+
+```json
+{
+  "$schema": "https://unpkg.com/@unclecat/mcp-multi-db/schema/config.schema.json",
+  "defaultAlias": "unleashed",
+  "aliases": {
+    "unleashed": {
+      "type": "postgresql",
+      "url": "postgresql://ro:pw@host:5432/main",
+      "mode": "readonly",
+      "displayName": "Unleashed — TMĐT Đài Loan",
+      "description": "DB production thị trường Đài Loan. Doanh thu, đơn hàng, tồn kho, khách hàng.",
+      "tablesHint": ["orders", "products", "customers"]
+    },
+    "staging": {
+      "type": "mysql",
+      "host": "staging.example.com", "user": "app", "password": "pw", "database": "appdb",
+      "mode": "readwrite",
+      "displayName": "Staging",
+      "description": "Môi trường test. Cho phép INSERT/UPDATE/DELETE."
+    }
+  }
+}
+```
+
+### Field metadata (giúp AI chọn đúng alias)
+
+| Field | Mục đích |
+|-------|----------|
+| `displayName` | Nhãn ngắn dễ đọc, hiển thị cạnh tên alias trong tool description. |
+| `description` | Mô tả ngắn DB này dùng cho việc gì. Inject vào tool description để AI route đúng. |
+| `tablesHint` | List tên bảng "thường dùng" để AI có điểm bắt đầu khi khám phá schema. |
+| `defaultAlias` (top-level) | Hint xuất hiện trong tool description khi user không chỉ rõ DB. `databaseAlias` vẫn required ở schema — đây chỉ là routing hint, không phải default ở server. |
+
+Khi khởi động, server inject toàn bộ metadata này vào description của các tool DB, đồng thời thêm `enum` constraint cho `databaseAlias` liệt kê tất cả alias đã load — AI không thể "bịa" alias không tồn tại.
+
+### Thứ tự ưu tiên
+
+- Có `MCP_DB_CONFIG` → dùng file loader; **toàn bộ `DB_*` env vars bị bỏ qua**.
+- Không có `MCP_DB_CONFIG` → fallback về env-var loader (xem mục bên dưới).
+- Cả 2 đều rỗng → server exit code 1.
+
+Có file mẫu để copy ở [`mcp-db.config.example.json`](./mcp-db.config.example.json).
+
+---
+
 ## Mô hình cấu hình
 
 Cấu hình qua biến môi trường. Mental model:

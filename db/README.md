@@ -58,6 +58,71 @@ When the server starts, it logs which aliases were loaded:
 
 ---
 
+## Configure via JSON file (recommended for multi-DB)
+
+If you have more than one database — or you want the AI client to know what each one is *for* — point the server at a JSON config file with the `MCP_DB_CONFIG` env var. This replaces the `DB_<ALIAS>_*` env block with a compact, block-per-alias file.
+
+```json
+{
+  "mcpServers": {
+    "multi-db": {
+      "command": "npx",
+      "args": ["-y", "@unclecat/mcp-multi-db"],
+      "env": {
+        "MCP_DB_CONFIG": "/Users/you/mcp-db.config.json"
+      }
+    }
+  }
+}
+```
+
+The config file lists each alias once, with all its fields nested in a single block:
+
+```json
+{
+  "$schema": "https://unpkg.com/@unclecat/mcp-multi-db/schema/config.schema.json",
+  "defaultAlias": "unleashed",
+  "aliases": {
+    "unleashed": {
+      "type": "postgresql",
+      "url": "postgresql://ro:pw@host:5432/main",
+      "mode": "readonly",
+      "displayName": "Unleashed — TMĐT Đài Loan",
+      "description": "Production DB for the Taiwan market. Orders, products, customers.",
+      "tablesHint": ["orders", "products", "customers"]
+    },
+    "staging": {
+      "type": "mysql",
+      "host": "staging.example.com", "user": "app", "password": "pw", "database": "appdb",
+      "mode": "readwrite",
+      "displayName": "Staging",
+      "description": "Test environment. Allows INSERT/UPDATE/DELETE."
+    }
+  }
+}
+```
+
+### Metadata fields (make the AI pick the right alias)
+
+| Field | Purpose |
+|-------|---------|
+| `displayName` | Short human-readable label shown next to the alias name in tool descriptions. |
+| `description` | One-line explanation of what the database is for. Shown in tool descriptions so the AI routes queries to the right alias. |
+| `tablesHint` | Optional list of likely table names — gives the AI a starting point for schema discovery. |
+| `defaultAlias` (top-level) | Hint shown in tool descriptions when the user doesn't specify a database. `databaseAlias` is still required at the schema level — this is a routing hint, not a server-side default. |
+
+At startup the server injects this metadata into every database tool's description, and adds an `enum` constraint to `databaseAlias` listing the loaded aliases — so the AI cannot hallucinate an alias name that doesn't exist.
+
+### Loader priority
+
+- `MCP_DB_CONFIG` set → file loader is used; **`DB_*` env vars are ignored**.
+- `MCP_DB_CONFIG` unset → falls back to the env-var loader (documented below).
+- Both empty → server exits with code 1.
+
+A copyable example lives at [`mcp-db.config.example.json`](./mcp-db.config.example.json).
+
+---
+
 ## Configuration model
 
 Configuration is via environment variables. The mental model:

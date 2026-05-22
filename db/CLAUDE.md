@@ -45,37 +45,31 @@ This is an MCP (Model Context Protocol) server that provides database connectivi
 
 ### Connection Configuration
 
-Three methods of configuration (parsed in order):
+Two mutually-exclusive paths:
 
-1. **Connection Strings** (via `{TYPE}_CONNECTIONS` env var):
-   ```
-   MYSQL_CONNECTIONS="prod=mysql://user:pass@host:3306/db;dev=mysql://..."
-   ```
+1. **JSON config file** (preferred for multi-DB) — point at it via `MCP_DB_CONFIG=/path/to/config.json`. Schema: `lib/configFile.js`. Top-level keys: `aliases` (required), `defaultAlias` (optional hint for AI), `logLevel` (optional). Each alias block carries the same connection fields as the env path plus optional metadata (`displayName`, `description`, `tablesHint`) used by the tool-description injection.
 
-2. **Numbered Variables** (via `{TYPE}_DB{N}_*` env vars):
-   ```
-   MYSQL_DB1_HOST=host1
-   MYSQL_DB1_DATABASE=db1
-   ```
+2. **Env vars** (legacy) — `DB_<ALIAS>_TYPE` + connection fields. Schema: `lib/config.js`. Same per-alias config shape minus metadata.
 
-3. **Legacy Single DB** (via `{TYPE}_*` env vars):
-   ```
-   MYSQL_HOST=localhost
-   MYSQL_DATABASE=mydb
-   ```
+Loader selection lives in `lib/loader.js`. If `MCP_DB_CONFIG` is set, the file loader is used and `DB_*` env vars are ignored entirely.
 
-Connection key format: `{type}_{host}_{port}_{database}_{user}_{options}`
+Connection key format inside the registry: alias names (lowercase) map to driver instances created lazily on first use.
 
 ### MCP Tools
 
 All tools accept:
-- `type` (required): "mysql" | "mariadb" | "postgresql" | "sqlserver"
-- `databaseAlias` (optional): Select from configured connections
-- `connection` (optional): Override with custom connection config
+- `databaseAlias` (required for most tools): one of the loaded alias names, exposed as a JSON-Schema `enum` so MCP clients can't pass an alias that doesn't exist.
 
-**db_query**: Execute raw SQL query
-**db_list_tables**: List all tables in database
-**db_describe_table**: Get table schema (columns + indexes), requires `tableName`
+Tools available (registered in `lib/toolHandlers.js`):
+
+**db_query**: Execute parameterized SQL.
+**db_list_tables**: List tables (optionally filtered by schema).
+**db_describe_table**: Columns + indexes for one table (requires `tableName`).
+**db_test_connection**: Lightweight `SELECT 1` healthcheck.
+**db_query_history**: Recent in-memory query metadata.
+**db_explain_query**: EXPLAIN-equivalent for the alias's dialect.
+
+When aliases carry metadata, `toolDescriptors()` prepends an "Available aliases" block (built from `_buildRoster()`) to each tool's description so the AI sees what each DB is for.
 
 ### Error Handling
 
