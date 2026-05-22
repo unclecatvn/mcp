@@ -1,5 +1,11 @@
 # @unclecat/mcp-multi-db
 
+## 0.0.3
+
+### Patch Changes
+
+- Merge pull request #11 from unclecatvn/changeset-release/master
+
 ## 0.0.2
 
 ### Patch Changes
