@@ -24,11 +24,21 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24 # ships with npm 11.x — needed for Trusted Publishers OIDC
           cache: pnpm
 
-      - name: Upgrade npm CLI (≥11.5.1 required for Trusted Publishers OIDC)
-        run: npm install -g npm@latest
+      - name: Ensure npm ≥ 11.5.1 (Trusted Publishers OIDC)
+        run: |
+          current=$(npm --version)
+          echo "Current npm: $current"
+          needed="11.5.1"
+          if printf '%s\n%s\n' "$needed" "$current" | sort -V | head -n1 | grep -qx "$needed"; then
+            echo "npm $current is recent enough — no upgrade needed"
+          else
+            echo "Upgrading npm to latest (using --force to bypass self-update bug)…"
+            npm install -g npm@latest --force
+            echo "npm now at: $(npm --version)"
+          fi
 
       - run: pnpm install --frozen-lockfile
 
