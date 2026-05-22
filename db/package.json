@@ -1,6 +1,6 @@
 {
   "name": "@unclecat/mcp-multi-db",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "MCP server for MySQL/MariaDB, PostgreSQL, and SQL Server with parameterized queries, per-alias safety modes, and bilingual docs.",
   "main": "index.js",
   "types": "index.d.ts",
