@@ -1,0 +1,33 @@
+{
+  "$schema": "https://unpkg.com/@unclecat/mcp-multi-db/schema/config.schema.json",
+  "logLevel": "info",
+  "defaultAlias": "unleashed",
+  "aliases": {
+    "unleashed": {
+      "type": "postgresql",
+      "url": "postgresql://ro:CHANGEME@unleashed-db.example.com:5432/main",
+      "mode": "readonly",
+      "displayName": "Unleashed — TMĐT Đài Loan",
+      "description": "DB production thị trường Đài Loan. Doanh thu, đơn hàng, tồn kho, khách hàng.",
+      "tablesHint": ["orders", "products", "customers"]
+    },
+    "staging": {
+      "type": "mysql",
+      "host": "staging.example.com",
+      "port": 3306,
+      "user": "appuser",
+      "password": "CHANGEME",
+      "database": "appdb",
+      "mode": "readwrite",
+      "displayName": "Staging",
+      "description": "Test environment. Allows INSERT/UPDATE/DELETE."
+    },
+    "local": {
+      "type": "postgresql",
+      "url": "postgresql://postgres:postgres@localhost:5432/devdb",
+      "mode": "readwrite+ddl",
+      "displayName": "Local dev",
+      "description": "Local development DB. Allows DDL (CREATE/ALTER/DROP)."
+    }
+  }
+}

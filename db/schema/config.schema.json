@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://unpkg.com/@unclecat/mcp-multi-db/schema/config.schema.json",
+  "title": "mcp-multi-db config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["aliases"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "logLevel": { "enum": ["debug", "info", "warn", "error"] },
+    "defaultAlias": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "aliases": {
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-z0-9_]*$": { "$ref": "#/definitions/alias" }
+      },
+      "additionalProperties": false,
+      "minProperties": 1
+    }
+  },
+  "definitions": {
+    "alias": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["postgresql", "mysql", "mariadb", "sqlserver"] },
+        "url": { "type": "string" },
+        "host": { "type": "string" },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "user": { "type": "string" },
+        "password": { "type": "string" },
+        "database": { "type": "string" },
+        "mode": { "enum": ["readonly", "readwrite", "readwrite+ddl"] },
+        "ssl": { "enum": ["disable", "prefer", "require", "verify"] },
+        "caCert": { "type": "string" },
+        "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 600000 },
+        "maxRows": { "type": "integer", "minimum": 1, "maximum": 1000000 },
+        "poolMax": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "displayName": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "tablesHint": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "maxItems": 50
+        }
+      },
+      "anyOf": [{ "required": ["url"] }, { "required": ["host"] }]
+    }
+  }
+}

@@ -8,7 +8,7 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-import { parseEnv } from "./lib/config.js";
+import { loadConfig } from "./lib/loader.js";
 import { ConnectionRegistry } from "./lib/connectionManager.js";
 import { ToolHandlers } from "./lib/toolHandlers.js";
 import { ResourceHandlers } from "./lib/resourceHandlers.js";
@@ -39,14 +39,25 @@ function makeLogger() {
 export class MultiDatabaseMCPServer {
   constructor() {
     this.logger = makeLogger();
-    const { aliases, errors } = parseEnv(process.env);
+    const { aliases, errors, defaultAlias, logLevel, source } = loadConfig(process.env);
+
+    // logLevel from config file takes precedence over env var when set.
+    if (logLevel && !process.env.MCP_DB_LOG_LEVEL) {
+      process.env.MCP_DB_LOG_LEVEL = logLevel;
+      this.logger = makeLogger();
+    }
+
     for (const e of errors) {
       this.logger.error({ event: "config_error", alias: e.alias, message: e.message });
     }
     if (Object.keys(aliases).length === 0) {
       this.logger.error({
         event: "no_valid_aliases",
-        hint: "Set DB_<ALIAS>_TYPE and DB_<ALIAS>_HOST (or _URL)",
+        source,
+        hint:
+          source === "config_file"
+            ? "Add at least one entry under `aliases` in your MCP_DB_CONFIG file"
+            : "Set DB_<ALIAS>_TYPE and DB_<ALIAS>_HOST (or _URL)",
       });
       process.exit(1);
     }
@@ -56,12 +67,14 @@ export class MultiDatabaseMCPServer {
       .join(", ");
     this.logger.info({
       event: "loaded_aliases",
+      source,
       count: Object.keys(aliases).length,
       aliases: summary,
+      ...(defaultAlias ? { defaultAlias } : {}),
     });
 
     this.registry = new ConnectionRegistry(aliases);
-    this.tools = new ToolHandlers(this.registry);
+    this.tools = new ToolHandlers(this.registry, { defaultAlias });
     this.resources = new ResourceHandlers(this.registry);
 
     this.server = new Server(

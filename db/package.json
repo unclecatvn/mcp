@@ -14,11 +14,13 @@
     "mcpServer.js",
     "lib/",
     "drivers/",
+    "schema/",
     "README.md",
     "README.vi.md",
     "CHANGELOG.md",
     "LICENSE",
-    ".env.example"
+    ".env.example",
+    "mcp-db.config.example.json"
   ],
   "scripts": {
     "start": "node index.js",

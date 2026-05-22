@@ -1,11 +1,19 @@
 const SECURITY_GUIDE = `# Security guide for @unclecat/mcp-multi-db
 
-This MCP server is configured per-alias via DB_<ALIAS>_* environment variables.
+This MCP server can be configured two ways:
+  • DB_<ALIAS>_* environment variables (legacy / simple)
+  • A JSON config file pointed to by MCP_DB_CONFIG (recommended for >1 DB
+    or when you want the AI to know which alias is for what)
 
-Default mode is **readonly**. To allow writes or DDL, set the alias mode explicitly:
+Default mode is **readonly**. To allow writes or DDL, set the alias mode
+explicitly:
 
+  # via env
   DB_PROD_MODE=readwrite          # allows INSERT/UPDATE/DELETE
-  DB_PROD_MODE=readwrite+ddl      # additionally allows CREATE/DROP/ALTER/TRUNCATE/GRANT/REVOKE
+  DB_PROD_MODE=readwrite+ddl      # additionally allows CREATE/DROP/ALTER/...
+
+  # via JSON config
+  { "aliases": { "prod": { "type": "...", "mode": "readwrite" } } }
 
 When you write SQL, ALWAYS use parameterized placeholders. Never concatenate
 user-supplied values into SQL strings. Prefer:
@@ -64,6 +72,9 @@ export class ResourceHandlers {
           database: c.database,
           maxRows: c.maxRows,
           timeoutMs: c.timeoutMs,
+          ...(c.displayName !== undefined && { displayName: c.displayName }),
+          ...(c.description !== undefined && { description: c.description }),
+          ...(c.tablesHint !== undefined && { tablesHint: c.tablesHint }),
         };
       });
       return {
