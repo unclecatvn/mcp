@@ -5,83 +5,103 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Run the MCP server
-npm start
-# or
-node index.js
+# Run the MCP server (reads config from MCP_DB_CONFIG or DB_* env vars)
+npm start            # node index.js
+npm run dev          # node --inspect index.js (Node inspector)
 
-# Run with Node inspector for debugging
-npm run dev
+# Quality
+npm run lint         # eslint .
+npm run format       # prettier --check .
+npm run format:fix   # prettier --write .
+
+# Tests (Vitest)
+npm test             # vitest run
+npm run test:watch   # vitest
+npm run test:coverage
 ```
-
-Note: No test framework is currently configured. The `npm test` script is a placeholder.
 
 ## Architecture
 
-This is an MCP (Model Context Protocol) server that provides database connectivity for MySQL/MariaDB, PostgreSQL, and SQL Server.
+An MCP (Model Context Protocol) server providing parameterized SQL access to MySQL/MariaDB, PostgreSQL, and SQL Server, with per-alias safety modes.
 
-### Entry Point Flow
+### Entry point flow
 
-`index.js` → `MultiDatabaseMCPServer` (mcpServer.js) → Drivers (drivers/)
+`index.js` → `MultiDatabaseMCPServer` (`mcpServer.js`) → `lib/` modules → drivers (`drivers/`).
 
-### Core Components
+The bulk of the logic lives in focused `lib/` modules; `mcpServer.js` (~126 lines) only wires them together, registers MCP request handlers, and installs shutdown handlers.
 
-**MultiDatabaseMCPServer** (`mcpServer.js`)
-- Main MCP server class with ~700 lines
-- Manages connection pooling and caching via `connections` Map
-- Implements auto-retry with exponential backoff (3 retries, 100ms initial delay, 2s max)
-- Registers 3 MCP tools: `db_query`, `db_list_tables`, `db_describe_table`
+### Startup sequence (`mcpServer.js`)
 
-**DatabaseConnection** (mcpServer.js:9-42)
-- Wrapper class around driver instances
-- Delegates to driver methods: `query()`, `listTables()`, `describeTable()`, `healthCheck()`, `close()`
+1. `loadConfig(process.env)` (via `lib/loader.js`) returns `{ aliases, errors, defaultAlias, logLevel, source }`.
+2. Config-file `logLevel` overrides the `MCP_DB_LOG_LEVEL` env var only when the env var is unset.
+3. Per-alias config errors are logged but non-fatal — other aliases still load. Zero valid aliases → log `event="no_valid_aliases"` and `process.exit(1)`.
+4. Build `ConnectionRegistry`, `ToolHandlers`, `ResourceHandlers`; connect over stdio.
+5. SIGINT/SIGTERM trigger graceful `closeAll()` with a 5s force-exit guard.
 
-**Driver Architecture** (`drivers/`)
-- `BaseDriver.js` - Abstract base class defining the driver interface
-- `mysql.js` - MySQL/MariaDB driver using `mysql2` with pool (max 5 connections)
-- `postgresql.js` - PostgreSQL driver using `pg` with pool (max 5, min 1)
-- `sqlserver.js` - SQL Server driver using `mssql` with pool (max 5, min 1)
-- `index.js` - Driver registry mapping (mariadb reuses mysql driver)
+Logging is structured JSON-ish key=value lines on **stderr** (MCP stdio convention) via `makeLogger()`.
 
-### Connection Configuration
+### Configuration (`lib/loader.js`)
 
-Two mutually-exclusive paths:
+Two mutually-exclusive loaders, selected by whether `MCP_DB_CONFIG` is set:
 
-1. **JSON config file** (preferred for multi-DB) — point at it via `MCP_DB_CONFIG=/path/to/config.json`. Schema: `lib/configFile.js`. Top-level keys: `aliases` (required), `defaultAlias` (optional hint for AI), `logLevel` (optional). Each alias block carries the same connection fields as the env path plus optional metadata (`displayName`, `description`, `tablesHint`) used by the tool-description injection.
+1. **JSON config file** (preferred for multi-DB) — `MCP_DB_CONFIG=/abs/path/config.json`. Parsed/validated by `lib/configFile.js`. Top-level keys: `aliases` (required), `defaultAlias` (optional AI routing hint), `logLevel` (optional). Each alias carries connection fields **plus** metadata (`displayName`, `description`, `tablesHint`) used by tool-description injection.
+2. **Env vars** (`DB_<ALIAS>_*`) — used only when `MCP_DB_CONFIG` is unset. Parsed by `lib/config.js`. Same connection shape, **no metadata support**.
 
-2. **Env vars** (legacy) — `DB_<ALIAS>_TYPE` + connection fields. Schema: `lib/config.js`. Same per-alias config shape minus metadata.
+When `MCP_DB_CONFIG` is set, `DB_*` env vars are ignored entirely. Alias keys are lowercase in JSON, uppercase in env vars; tool calls always use lowercase.
 
-Loader selection lives in `lib/loader.js`. If `MCP_DB_CONFIG` is set, the file loader is used and `DB_*` env vars are ignored entirely.
+### `lib/` modules
 
-Connection key format inside the registry: alias names (lowercase) map to driver instances created lazily on first use.
+- **loader.js** — picks the JSON vs env loader.
+- **configFile.js** / **config.js** — validate JSON-file config / env-var config respectively.
+- **connectionManager.js** — `ConnectionRegistry`: owns the alias → driver `Map`, lazily creates drivers on first use, and provides `withRetry()` (≤3 retries, exponential backoff 100ms→2s, recreates the driver after a connection-level failure).
+- **toolHandlers.js** — `ToolHandlers`: builds tool descriptors (injects the alias roster + `databaseAlias` enum), dispatches calls, runs the query pipeline, and keeps the in-memory history.
+- **resourceHandlers.js** — `ResourceHandlers`: serves the `db://aliases` and `db://security-guide` resources.
+- **queryAnalyzer.js** — classifies SQL statements (statement type, LIMIT/TOP/FETCH presence).
+- **modeEnforcer.js** — gates statements against the alias `mode`; strictest mode wins for multi-statement.
+- **paramConverter.js** — converts `?` / `:named` placeholders to the dialect's native form (`$1` / `?` / `@p1`), ignoring placeholders inside string literals and comments.
+- **limits.js** — `resolveTimeout`, `resolveMaxRows`, `applyRowLimit` (caps unbounded SELECTs); enforces global hard caps.
+- **validators.js** — Zod input schemas + `parseOrThrow` for each tool.
+- **errors.js** — typed errors and `formatErrorForMcp` (maps to `DB_*` error codes).
 
-### MCP Tools
+### Query pipeline (`ToolHandlers._runQuery`)
 
-All tools accept:
-- `databaseAlias` (required for most tools): one of the loaded alias names, exposed as a JSON-Schema `enum` so MCP clients can't pass an alias that doesn't exist.
+`analyzeQuery(sql)` → `enforceMode(analysis, cfg.mode, alias)` → `applyRowLimit(...)` → `convertParams(...)` → `registry.withRetry(driver => driver.query(...))`. Result includes `truncated: true` when the row cap is hit. History (last 50, no SQL text) is recorded per call.
 
-Tools available (registered in `lib/toolHandlers.js`):
+### Drivers (`drivers/`)
 
-**db_query**: Execute parameterized SQL.
-**db_list_tables**: List tables (optionally filtered by schema).
-**db_describe_table**: Columns + indexes for one table (requires `tableName`).
-**db_test_connection**: Lightweight `SELECT 1` healthcheck.
-**db_query_history**: Recent in-memory query metadata.
-**db_explain_query**: EXPLAIN-equivalent for the alias's dialect.
+- `BaseDriver.js` — abstract interface: `query()`, `listTables()`, `describeTable()`, `healthCheck()`, `close()`.
+- `mysql.js` (`mysql2`), `postgresql.js` (`pg`), `sqlserver.js` (`mssql`) — all pooled (default max 5).
+- `index.js` — `createDriver(config)` registry; **mariadb reuses the mysql driver**.
 
-When aliases carry metadata, `toolDescriptors()` prepends an "Available aliases" block (built from `_buildRoster()`) to each tool's description so the AI sees what each DB is for.
+### MCP tools (registered in `lib/toolHandlers.js`)
 
-### Error Handling
+All accept `databaseAlias` (exposed as a JSON-Schema `enum` of loaded aliases so clients can't pass an unknown one).
 
-- Retryable errors detected via regex patterns (connection lost, timeout, ECONNRESET, etc.)
-- On retry, cached connection is removed and recreated
-- SQL Server uses parameterized queries; MySQL uses `??` placeholder for identifiers
+| Tool | Required extras | Purpose |
+|---|---|---|
+| `db_query` | `sql` (+ `params?`, `maxRows?`, `timeoutMs?`) | Execute parameterized SQL. |
+| `db_list_tables` | — (`schema?`) | List tables, optionally schema-filtered. |
+| `db_describe_table` | `tableName` (`schema?`) | Columns + indexes for one table. |
+| `db_test_connection` | — | `SELECT 1` healthcheck. |
+| `db_query_history` | — (`databaseAlias?`, `limit?`) | Recent in-memory query metadata (no SQL text). |
+| `db_explain_query` | `sql` (+ `params?`) | Dialect-specific EXPLAIN. |
 
-### Important Notes
+When aliases carry metadata, `toolDescriptors()` prepends an "Available aliases" block (from `_buildRoster()`) to each tool description and to the `databaseAlias` field so the AI routes to the right DB.
 
-- MariaDB shares the same driver as MySQL (see drivers/index.js)
-- SQL Server config normalization: `host` → `server`, adds default options
-- All drivers use connection pooling (max 5 connections)
-- `multipleStatements: false` in MySQL for security
-- Logging uses `console.error` (MCP stdio convention)
-- Server handles SIGINT for graceful cleanup
+### MCP resources (`lib/resourceHandlers.js`)
+
+- `db://aliases` — JSON summary of loaded aliases (includes metadata when set; no secrets).
+- `db://security-guide` — Markdown reference for modes + parameterized queries.
+
+### Security model
+
+- **Parameterized queries only** — SQL injection is eliminated at the API layer.
+- **Per-alias mode**: `readonly` (default) → `readwrite` → `readwrite+ddl`. Unknown statement types are rejected even at `readwrite+ddl`. Blocked ops return `DB_PERMISSION_DENIED` naming the setting to change.
+- Row caps (default 10 000, hard cap 1 000 000) and timeouts (default 30 000 ms, hard cap 600 000 ms), bounded per alias and globally.
+- MySQL runs with `multipleStatements: false`.
+
+## Important notes
+
+- MariaDB shares the mysql driver (`drivers/index.js`).
+- SQL Server config normalizes `host` → `server` and adds default options.
+- Logging is on **stderr** (`console.error`) — stdout is reserved for the MCP protocol.

@@ -73,6 +73,25 @@ Log khi start:
 
 Copy [`mcp-db.config.example.json`](./mcp-db.config.example.json) để bắt đầu.
 
+### VS Code
+
+VS Code (1.102+) hỗ trợ MCP native. Khai báo server trong file workspace `.vscode/mcp.json` (lưu ý key top-level là `servers`, không phải `mcpServers`):
+
+```json
+{
+  "servers": {
+    "multi-db": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@unclecat/mcp-multi-db"],
+      "env": { "MCP_DB_CONFIG": "${workspaceFolder}/mcp-db.config.json" }
+    }
+  }
+}
+```
+
+`${workspaceFolder}` tự resolve thành đường dẫn tuyệt đối, nên anh có thể để `mcp-db.config.json` ngay ở root repo — không cần hardcode path theo máy.
+
 ---
 
 ## Tham chiếu cấu hình

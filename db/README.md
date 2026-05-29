@@ -77,6 +77,25 @@ Startup log:
 
 Copy [`mcp-db.config.example.json`](./mcp-db.config.example.json) to start.
 
+### VS Code
+
+VS Code (1.102+) has native MCP support. Add the server in a workspace file `.vscode/mcp.json` (note the top-level key is `servers`, not `mcpServers`):
+
+```json
+{
+  "servers": {
+    "multi-db": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@unclecat/mcp-multi-db"],
+      "env": { "MCP_DB_CONFIG": "${workspaceFolder}/mcp-db.config.json" }
+    }
+  }
+}
+```
+
+`${workspaceFolder}` resolves to an absolute path, so you can keep `mcp-db.config.json` in the repo root — no hardcoded machine path needed.
+
 ---
 
 ## Configuration reference
