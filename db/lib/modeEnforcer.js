@@ -26,13 +26,22 @@ const OP_REQUIRED_MODE = {
   // UNKNOWN intentionally not in this map → conservative: requires +ddl
 };
 
+function modeFixHint(alias, required, configSource) {
+  if (configSource === "config_file") {
+    return `To allow: set "aliases.${alias}.mode": "${required}" in your MCP_DB_CONFIG file.`;
+  }
+  return `To allow: set DB_${alias.toUpperCase()}_MODE=${required} in environment.`;
+}
+
 /**
- * @param {{ primaryType: string, isMultiStatement: boolean, statements: Array<{type:string}> }} analysis
+ * @param {{ primaryType: string, isMultiStatement: boolean, statements: Array<{type:string, effectiveType?:string}> }} analysis
  * @param {"readonly"|"readwrite"|"readwrite+ddl"} aliasMode
  * @param {string} alias
+ * @param {{ configSource?: "config_file"|"env" }} [opts]
  * @throws PermissionDeniedError if any statement requires a stricter mode than aliasMode.
  */
-export function enforceMode(analysis, aliasMode, alias) {
+export function enforceMode(analysis, aliasMode, alias, opts = {}) {
+  const configSource = opts.configSource ?? "env";
   const aliasRank = MODE_RANK[aliasMode];
   if (aliasRank === undefined) {
     throw new PermissionDeniedError(
@@ -41,16 +50,20 @@ export function enforceMode(analysis, aliasMode, alias) {
     );
   }
   for (const stmt of analysis.statements) {
-    const required = OP_REQUIRED_MODE[stmt.type] ?? "readwrite+ddl";
+    // Gate on the effective (unwrapped) operation: `EXPLAIN ANALYZE <write>`
+    // executes the write on PostgreSQL, so its surface type "EXPLAIN" must not
+    // be trusted. Falls back to `type` for callers that predate effectiveType.
+    const opType = stmt.effectiveType ?? stmt.type;
+    const required = OP_REQUIRED_MODE[opType] ?? "readwrite+ddl";
     const requiredRank = MODE_RANK[required];
-    const isUnknown = !(stmt.type in OP_REQUIRED_MODE);
+    const isUnknown = !(opType in OP_REQUIRED_MODE);
     if (requiredRank > aliasRank || isUnknown) {
-      const opName = stmt.type === "UNKNOWN" ? "UNKNOWN-OPERATION" : stmt.type;
+      const opName = opType === "UNKNOWN" ? "UNKNOWN-OPERATION" : opType;
       throw new PermissionDeniedError(
-        `Database '${alias}' is in ${aliasMode} mode. Operation '${opName}' requires '${required}' mode. To allow: set DB_${alias.toUpperCase()}_MODE=${required} in environment.`,
+        `Database '${alias}' is in ${aliasMode} mode. Operation '${opName}' requires '${required}' mode. ${modeFixHint(alias, required, configSource)}`,
         {
           alias,
-          operation: stmt.type,
+          operation: opType,
           currentMode: aliasMode,
           requiredMode: required,
         },

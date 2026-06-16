@@ -1,15 +1,14 @@
 import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { ConfigError } from "./errors.js";
-
-const VALID_TYPES = ["mysql", "mariadb", "postgresql", "sqlserver"];
-const VALID_MODES = ["readonly", "readwrite", "readwrite+ddl"];
-const VALID_SSL = ["disable", "prefer", "require", "verify"];
-const VALID_LOG_LEVELS = ["debug", "info", "warn", "error"];
-
-const ALIAS_KEY_RE = /^[a-z][a-z0-9_]*$/;
-const DEFAULT_PORTS = { postgresql: 5432, mysql: 3306, mariadb: 3306, sqlserver: 1433 };
-const DEFAULTS = { mode: "readonly", ssl: "prefer", timeoutMs: 30000, maxRows: 10000, poolMax: 5 };
+import {
+  JSON_ALIAS_KEY_RE,
+  VALID_LOG_LEVELS,
+  VALID_MODES,
+  VALID_SSL,
+  VALID_TYPES,
+} from "./aliasConstants.js";
+import { normalizeAliasConfig } from "./normalizeAlias.js";
 
 const AliasSchema = z
   .object({
@@ -29,12 +28,13 @@ const AliasSchema = z
     displayName: z.string().max(200).optional(),
     description: z.string().max(2000).optional(),
     tablesHint: z.array(z.string().min(1).max(128)).max(50).optional(),
+    defaultSchema: z
+      .string()
+      .regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
+      .optional(),
   })
   .strict();
 
-// Root is .passthrough() so unknown top-level keys (e.g. future fields,
-// $schema in older versions) don't break older loaders — forward-compat.
-// Alias schema above stays .strict() so typos like `tablehint` get flagged.
 const RootSchema = z
   .object({
     $schema: z.string().optional(),
@@ -44,11 +44,31 @@ const RootSchema = z
   })
   .passthrough();
 
-/**
- * Parse a JSON config string. Returns the same shape as parseEnv plus
- * optional defaultAlias and logLevel. Per-alias failures are skipped and
- * reported via `errors` (mirror of env loader behavior).
- */
+function jsonFail(code, detail = {}) {
+  switch (code) {
+    case "invalid_url":
+      throw new Error(`url: not a valid URL (${detail.cause})`);
+    case "missing_host":
+      throw new Error("host: required (set directly or via url)");
+    case "invalid_type":
+      throw new Error(`type: must be one of ${VALID_TYPES.join(", ")}`);
+    case "invalid_port":
+      throw new Error("port: must be an integer 1-65535");
+    case "invalid_mode":
+      throw new Error(`mode: must be one of ${VALID_MODES.join(", ")}`);
+    case "invalid_ssl":
+      throw new Error(`ssl: must be one of ${VALID_SSL.join(", ")}`);
+    case "invalid_timeout_ms":
+      throw new Error("timeoutMs: must be a positive integer ≤ 600000");
+    case "invalid_max_rows":
+      throw new Error("maxRows: must be a positive integer ≤ 1000000");
+    case "invalid_pool_max":
+      throw new Error("poolMax: must be a positive integer ≤ 100");
+    default:
+      throw new Error(`${code}: invalid alias configuration`);
+  }
+}
+
 export function parseConfigJson(jsonString) {
   let parsed;
   try {
@@ -72,7 +92,7 @@ export function parseConfigJson(jsonString) {
   const errors = [];
 
   for (const [aliasKey, rawAlias] of Object.entries(root.aliases)) {
-    if (!ALIAS_KEY_RE.test(aliasKey)) {
+    if (!JSON_ALIAS_KEY_RE.test(aliasKey)) {
       errors.push({
         alias: aliasKey,
         message: `alias key '${aliasKey}' must match ^[a-z][a-z0-9_]*$`,
@@ -88,7 +108,7 @@ export function parseConfigJson(jsonString) {
       continue;
     }
     try {
-      aliases[aliasKey] = normalizeAlias(aliasKey, aliasResult.data);
+      aliases[aliasKey] = normalizeAliasConfig(aliasKey, aliasResult.data, { fail: jsonFail });
     } catch (err) {
       errors.push({ alias: aliasKey, message: err.message });
     }
@@ -106,47 +126,6 @@ export function parseConfigJson(jsonString) {
   return { aliases, errors, defaultAlias, logLevel: root.logLevel };
 }
 
-function normalizeAlias(alias, raw) {
-  let { host, port, user, password, database } = raw;
-  if (raw.url) {
-    try {
-      const u = new URL(raw.url);
-      host ??= u.hostname;
-      port ??= u.port ? Number(u.port) : undefined;
-      user ??= u.username ? decodeURIComponent(u.username) : undefined;
-      password ??= u.password ? decodeURIComponent(u.password) : undefined;
-      database ??= u.pathname ? u.pathname.slice(1) || undefined : undefined;
-    } catch (err) {
-      throw new Error(`url: not a valid URL (${err.message})`);
-    }
-  }
-  if (!host) throw new Error("host: required (set directly or via url)");
-  port ??= DEFAULT_PORTS[raw.type];
-
-  return {
-    alias,
-    type: raw.type,
-    host,
-    port,
-    user,
-    password,
-    database,
-    mode: raw.mode ?? DEFAULTS.mode,
-    ssl: raw.ssl ?? DEFAULTS.ssl,
-    caCert: raw.caCert,
-    timeoutMs: raw.timeoutMs ?? DEFAULTS.timeoutMs,
-    maxRows: raw.maxRows ?? DEFAULTS.maxRows,
-    poolMax: raw.poolMax ?? DEFAULTS.poolMax,
-    ...(raw.displayName !== undefined && { displayName: raw.displayName }),
-    ...(raw.description !== undefined && { description: raw.description }),
-    ...(raw.tablesHint !== undefined && { tablesHint: raw.tablesHint }),
-  };
-}
-
-/**
- * IO wrapper — read file from disk then parse.
- * @throws ConfigError on missing file or invalid content.
- */
 export function parseConfigFile(filePath) {
   let contents;
   try {

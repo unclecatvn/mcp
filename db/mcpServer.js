@@ -12,36 +12,17 @@ import { loadConfig } from "./lib/loader.js";
 import { ConnectionRegistry } from "./lib/connectionManager.js";
 import { ToolHandlers } from "./lib/toolHandlers.js";
 import { ResourceHandlers } from "./lib/resourceHandlers.js";
+import { INSTRUCTIONS } from "./lib/instructions.js";
+import { makeLogger } from "./lib/logger.js";
 
 const require = createRequire(import.meta.url);
 const { name: SERVER_NAME, version: SERVER_VERSION } = require("./package.json");
-const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
-
-function makeLogger() {
-  const levelName = (process.env.MCP_DB_LOG_LEVEL ?? "info").toLowerCase();
-  const min = LOG_LEVELS[levelName] ?? LOG_LEVELS.info;
-  function log(level, fields) {
-    if (LOG_LEVELS[level] < min) return;
-    const ts = new Date().toISOString();
-    const flat = Object.entries(fields)
-      .map(([k, v]) => `${k}=${typeof v === "string" ? JSON.stringify(v) : v}`)
-      .join(" ");
-    console.error(`[${ts}] [${level}] ${flat}`);
-  }
-  return {
-    debug: (fields) => log("debug", fields),
-    info: (fields) => log("info", fields),
-    warn: (fields) => log("warn", fields),
-    error: (fields) => log("error", fields),
-  };
-}
 
 export class MultiDatabaseMCPServer {
   constructor() {
     this.logger = makeLogger();
     const { aliases, errors, defaultAlias, logLevel, source } = loadConfig(process.env);
 
-    // logLevel from config file takes precedence over env var when set.
     if (logLevel && !process.env.MCP_DB_LOG_LEVEL) {
       process.env.MCP_DB_LOG_LEVEL = logLevel;
       this.logger = makeLogger();
@@ -74,12 +55,15 @@ export class MultiDatabaseMCPServer {
     });
 
     this.registry = new ConnectionRegistry(aliases);
-    this.tools = new ToolHandlers(this.registry, { defaultAlias });
+    this.tools = new ToolHandlers(this.registry, { defaultAlias, configSource: source });
     this.resources = new ResourceHandlers(this.registry);
 
     this.server = new Server(
       { name: SERVER_NAME, version: SERVER_VERSION },
-      { capabilities: { tools: {}, resources: {} } },
+      {
+        capabilities: { tools: {}, resources: {} },
+        instructions: INSTRUCTIONS,
+      },
     );
 
     this._registerHandlers();

@@ -9,14 +9,7 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "lcov", "html"],
       include: ["lib/**/*.js", "drivers/**/*.js"],
-      exclude: [
-        "**/*.test.js",
-        // TODO: write tests for these and drop from exclude
-        "lib/connectionManager.js",
-        "lib/resourceHandlers.js",
-        "lib/toolHandlers.js",
-        "drivers/**",
-      ],
+      exclude: ["**/*.test.js"],
       thresholds: {
         lines: 80,
         functions: 80,

@@ -51,10 +51,16 @@ When `MCP_DB_CONFIG` is set, `DB_*` env vars are ignored entirely. Alias keys ar
 
 ### `lib/` modules
 
+- **aliasConstants.js** — shared VALID_TYPES, modes, defaults, caps, alias key patterns.
+- **normalizeAlias.js** — single alias normalization path for env + JSON loaders.
 - **loader.js** — picks the JSON vs env loader.
 - **configFile.js** / **config.js** — validate JSON-file config / env-var config respectively.
 - **connectionManager.js** — `ConnectionRegistry`: owns the alias → driver `Map`, lazily creates drivers on first use, and provides `withRetry()` (≤3 retries, exponential backoff 100ms→2s, recreates the driver after a connection-level failure).
-- **toolHandlers.js** — `ToolHandlers`: builds tool descriptors (injects the alias roster + `databaseAlias` enum), dispatches calls, runs the query pipeline, and keeps the in-memory history.
+- **toolDescriptors.js** — `ToolDescriptorBuilder`: builds MCP tool schemas with alias roster injection.
+- **toolHandlers.js** — `ToolHandlers`: dispatches tool calls, runs the query pipeline, keeps in-memory history.
+- **instructions.js** — server-level MCP instructions (initialize).
+- **logger.js** — structured stderr logger.
+- **tableListing.js** / **tableListingSql.js** — pagination helpers and dialect-specific list-tables SQL.
 - **resourceHandlers.js** — `ResourceHandlers`: serves the `db://aliases` and `db://security-guide` resources.
 - **queryAnalyzer.js** — classifies SQL statements (statement type, LIMIT/TOP/FETCH presence).
 - **modeEnforcer.js** — gates statements against the alias `mode`; strictest mode wins for multi-statement.

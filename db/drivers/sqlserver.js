@@ -1,6 +1,6 @@
 import sql from "mssql";
 import { BaseDriver } from "./BaseDriver.js";
-import { ConnectionError, TimeoutError, QueryError } from "../lib/errors.js";
+import { ConnectionError } from "../lib/errors.js";
 
 const RETRYABLE_RE = /(ECONNRESET|ECONNREFUSED|ETIMEDOUT|ConnectionError|Connection is closed)/i;
 
@@ -89,39 +89,20 @@ export class SqlServerDriver extends BaseDriver {
           : [],
       };
     } catch (err) {
-      if (/Timeout/i.test(err.message ?? "") || err.code === "ETIMEOUT") {
-        throw new TimeoutError(
-          `Query exceeded ${timeoutMs}ms timeout for alias '${this.config.alias}'.`,
-          { alias: this.config.alias, timeoutMs },
-          err,
-        );
-      }
-      if (RETRYABLE_RE.test(err.message ?? "")) {
-        throw new ConnectionError(
-          `SQL Server connection error: ${err.message}`,
-          {
-            alias: this.config.alias,
-          },
-          err,
-        );
-      }
-      throw new QueryError(
-        `SQL Server query failed: ${err.message}`,
-        {
-          alias: this.config.alias,
-        },
-        err,
-      );
+      throw this._classifyError(err, { timeoutMs });
     }
   }
 
-  async listTables({ schema } = {}) {
-    const text = schema
-      ? "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @schema ORDER BY TABLE_SCHEMA, TABLE_NAME"
-      : "SELECT TABLE_SCHEMA, TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_SCHEMA, TABLE_NAME";
-    const params = schema ? { schema } : undefined;
-    const r = await this.executeQuery({ sql: text, params, timeoutMs: this.config.timeoutMs });
-    return r.rows.map((row) => ({ name: row.TABLE_NAME, schema: row.TABLE_SCHEMA }));
+  get _dialectLabel() {
+    return "SQL Server";
+  }
+
+  _isRetryableError(message) {
+    return RETRYABLE_RE.test(message);
+  }
+
+  _isTimeoutError(err) {
+    return /Timeout/i.test(err?.message ?? "") || err?.code === "ETIMEOUT";
   }
 
   async describeTable({ tableName, schema }) {
@@ -143,19 +124,6 @@ export class SqlServerDriver extends BaseDriver {
       timeoutMs: this.config.timeoutMs,
     });
     return { columns: cols.rows, indexes: idx.rows };
-  }
-
-  async healthCheck() {
-    try {
-      const r = await this.executeQuery({
-        sql: "SELECT 1 AS ok",
-        params: undefined,
-        timeoutMs: 5000,
-      });
-      return r.rows[0]?.ok === 1;
-    } catch {
-      return false;
-    }
   }
 
   async close() {

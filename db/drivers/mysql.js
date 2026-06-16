@@ -1,6 +1,6 @@
 import mysql from "mysql2/promise";
 import { BaseDriver } from "./BaseDriver.js";
-import { ConnectionError, TimeoutError, QueryError } from "../lib/errors.js";
+import { ConnectionError, TimeoutError } from "../lib/errors.js";
 
 const RETRYABLE_RE =
   /(ECONNRESET|ECONNREFUSED|PROTOCOL_CONNECTION_LOST|ETIMEDOUT|read ECONNRESET)/i;
@@ -83,49 +83,24 @@ export class MysqlDriver extends BaseDriver {
         columns: (fields ?? []).map((f) => ({ name: f.name, type: f.type })),
       };
     } catch (err) {
-      if (
-        timedOut ||
-        /max_execution_time/i.test(err.message ?? "") ||
-        /timeout/i.test(err.message ?? "")
-      ) {
-        throw new TimeoutError(
-          `Query exceeded ${timeoutMs}ms timeout for alias '${this.config.alias}'.`,
-          { alias: this.config.alias, timeoutMs },
-          err,
-        );
-      }
-      if (RETRYABLE_RE.test(err.message ?? "")) {
-        throw new ConnectionError(
-          `MySQL connection error: ${err.message}`,
-          {
-            alias: this.config.alias,
-          },
-          err,
-        );
-      }
-      throw new QueryError(
-        `MySQL query failed: ${err.message}`,
-        {
-          alias: this.config.alias,
-        },
-        err,
-      );
+      throw this._classifyError(err, { timeoutMs, forceTimeout: timedOut });
     } finally {
       if (timeoutHandle) clearTimeout(timeoutHandle);
       if (conn && !timedOut) conn.release();
     }
   }
 
-  async listTables({ schema } = {}) {
-    const sql = schema
-      ? "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema = ? ORDER BY table_schema, table_name"
-      : "SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY table_schema, table_name";
-    const params = schema ? [schema] : [];
-    const r = await this.executeQuery({ sql, params, timeoutMs: this.config.timeoutMs });
-    return r.rows.map((row) => ({
-      name: row.table_name ?? row.TABLE_NAME,
-      schema: row.table_schema ?? row.TABLE_SCHEMA,
-    }));
+  get _dialectLabel() {
+    return "MySQL";
+  }
+
+  _isRetryableError(message) {
+    return RETRYABLE_RE.test(message);
+  }
+
+  _isTimeoutError(err) {
+    const m = err?.message ?? "";
+    return /max_execution_time/i.test(m) || /timeout/i.test(m);
   }
 
   async describeTable({ tableName, schema }) {
@@ -146,19 +121,6 @@ export class MysqlDriver extends BaseDriver {
       timeoutMs: this.config.timeoutMs,
     });
     return { columns: cols.rows, indexes: idx.rows };
-  }
-
-  async healthCheck() {
-    try {
-      const r = await this.executeQuery({
-        sql: "SELECT 1 AS ok",
-        params: [],
-        timeoutMs: 5000,
-      });
-      return r.rows[0]?.ok === 1;
-    } catch {
-      return false;
-    }
   }
 
   async close() {

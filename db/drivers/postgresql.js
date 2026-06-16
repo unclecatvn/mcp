@@ -1,6 +1,6 @@
 import pg from "pg";
 import { BaseDriver } from "./BaseDriver.js";
-import { ConnectionError, TimeoutError, QueryError } from "../lib/errors.js";
+import { ConnectionError } from "../lib/errors.js";
 
 const RETRYABLE_RE =
   /(ECONNRESET|ECONNREFUSED|ETIMEDOUT|connection terminated|server closed|read ECONNRESET|Connection lost)/i;
@@ -56,8 +56,12 @@ export class PostgresqlDriver extends BaseDriver {
       );
     });
     try {
-      // Per-statement timeout.
-      await client.query(`SET LOCAL statement_timeout = ${Number(timeoutMs)}`);
+      // Per-statement timeout. `SET LOCAL` only lasts for the surrounding
+      // transaction; in node-pg's autocommit mode the query below runs in its
+      // own *separate* implicit transaction, so a LOCAL setting would never
+      // apply. Use a session-level SET (reset in `finally` so the pooled
+      // connection is returned clean). `timeoutMs` is always numeric here.
+      await client.query(`SET statement_timeout = ${Number(timeoutMs)}`);
       const result = await client.query(sql, params);
       return {
         rows: result.rows,
@@ -68,41 +72,30 @@ export class PostgresqlDriver extends BaseDriver {
         })),
       };
     } catch (err) {
-      if (/canceling statement due to statement timeout/i.test(err.message)) {
-        throw new TimeoutError(
-          `Query exceeded ${timeoutMs}ms timeout for alias '${this.config.alias}'.`,
-          { alias: this.config.alias, timeoutMs },
-          err,
-        );
-      }
-      if (RETRYABLE_RE.test(err.message)) {
-        throw new ConnectionError(
-          `PostgreSQL connection error: ${err.message}`,
-          {
-            alias: this.config.alias,
-          },
-          err,
-        );
-      }
-      throw new QueryError(
-        `PostgreSQL query failed: ${err.message}`,
-        {
-          alias: this.config.alias,
-        },
-        err,
-      );
+      throw this._classifyError(err, { timeoutMs });
     } finally {
+      // Reset the session timeout so the next borrower of this pooled
+      // connection starts from the server default. Best-effort: a broken
+      // connection will throw here and is disposed by release().
+      try {
+        await client.query("SET statement_timeout = DEFAULT");
+      } catch {
+        // ignore — connection unusable; release() handles disposal
+      }
       client.release();
     }
   }
 
-  async listTables({ schema } = {}) {
-    const sql = schema
-      ? `SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema = $1 ORDER BY table_schema, table_name`
-      : `SELECT table_schema, table_name FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema') ORDER BY table_schema, table_name`;
-    const params = schema ? [schema] : [];
-    const r = await this.executeQuery({ sql, params, timeoutMs: this.config.timeoutMs });
-    return r.rows.map((row) => ({ name: row.table_name, schema: row.table_schema }));
+  get _dialectLabel() {
+    return "PostgreSQL";
+  }
+
+  _isRetryableError(message) {
+    return RETRYABLE_RE.test(message);
+  }
+
+  _isTimeoutError(err) {
+    return /canceling statement due to statement timeout/i.test(err?.message ?? "");
   }
 
   async describeTable({ tableName, schema }) {
@@ -120,19 +113,6 @@ export class PostgresqlDriver extends BaseDriver {
       timeoutMs: this.config.timeoutMs,
     });
     return { columns: cols.rows, indexes: idx.rows };
-  }
-
-  async healthCheck() {
-    try {
-      const r = await this.executeQuery({
-        sql: "SELECT 1 AS ok",
-        params: [],
-        timeoutMs: 5000,
-      });
-      return r.rows[0]?.ok === 1;
-    } catch {
-      return false;
-    }
   }
 
   async close() {

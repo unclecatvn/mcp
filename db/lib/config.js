@@ -1,39 +1,79 @@
 import { ConfigError } from "./errors.js";
+import {
+  ALIAS_DEFAULTS,
+  ENV_ALIAS_RE,
+  VALID_MODES,
+  VALID_SSL,
+  VALID_TYPES,
+} from "./aliasConstants.js";
+import { normalizeAliasConfig } from "./normalizeAlias.js";
 
-const VALID_TYPES = ["mysql", "mariadb", "postgresql", "sqlserver"];
-const VALID_MODES = ["readonly", "readwrite", "readwrite+ddl"];
-const VALID_SSL = ["disable", "prefer", "require", "verify"];
-
-const DEFAULTS = {
-  mode: "readonly",
-  ssl: "prefer",
-  timeoutMs: 30000,
-  maxRows: 10000,
-  poolMax: 5,
-};
-
-const DEFAULT_PORTS = {
-  mysql: 3306,
-  mariadb: 3306,
-  postgresql: 5432,
-  sqlserver: 1433,
-};
-
-const HARD_CAPS = {
-  timeoutMs: 600_000,
-  maxRows: 1_000_000,
-  poolMax: 100,
-};
-
-const ALIAS_RE = /^[A-Z][A-Z0-9_]*$/;
+function envFail(alias) {
+  return (code, detail = {}) => {
+    const upper = alias.toUpperCase();
+    switch (code) {
+      case "invalid_type":
+        throw new ConfigError(`DB_${upper}_TYPE must be one of: ${VALID_TYPES.join(", ")}`, {
+          alias,
+          field: "type",
+          got: detail.got,
+        });
+      case "invalid_url":
+        throw new ConfigError(`DB_${upper}_URL is not a valid URL: ${detail.cause}`, {
+          alias,
+          field: "url",
+        });
+      case "missing_host":
+        throw new ConfigError(`DB_${upper}_HOST (or _URL) is required`, {
+          alias,
+          field: "host",
+        });
+      case "invalid_port":
+        throw new ConfigError(`DB_${upper}_PORT must be an integer 1-65535`, {
+          alias,
+          field: "port",
+          got: detail.got,
+        });
+      case "invalid_mode":
+        throw new ConfigError(`DB_${upper}_MODE must be one of: ${VALID_MODES.join(", ")}`, {
+          alias,
+          field: "mode",
+          got: detail.got,
+        });
+      case "invalid_ssl":
+        throw new ConfigError(`DB_${upper}_SSL must be one of: ${VALID_SSL.join(", ")}`, {
+          alias,
+          field: "ssl",
+          got: detail.got,
+        });
+      case "invalid_timeout_ms":
+        throw new ConfigError(`DB_${upper}_TIMEOUT_MS must be a positive integer ≤ ${600_000}`, {
+          alias,
+          field: "timeoutMs",
+          got: detail.got,
+        });
+      case "invalid_max_rows":
+        throw new ConfigError(`DB_${upper}_MAX_ROWS must be a positive integer ≤ ${1_000_000}`, {
+          alias,
+          field: "maxRows",
+          got: detail.got,
+        });
+      case "invalid_pool_max":
+        throw new ConfigError(`DB_${upper}_POOL_MAX must be a positive integer ≤ ${100}`, {
+          alias,
+          field: "poolMax",
+          got: detail.got,
+        });
+      default:
+        throw new ConfigError(`DB_${upper} configuration is invalid`, { alias, code });
+    }
+  };
+}
 
 /**
  * Parse environment variables into per-alias connection configs.
  * Discovery: any env var matching DB_<ALIAS>_TYPE defines an alias.
  * Returns { aliases, errors }; never throws on per-alias failure.
- *
- * @param {NodeJS.ProcessEnv | Record<string, string>} env
- * @returns {{ aliases: Record<string, object>, errors: Array<{ alias: string, message: string }> }}
  */
 export function parseEnv(env) {
   const aliases = {};
@@ -46,13 +86,13 @@ export function parseEnv(env) {
   }
 
   for (const ALIAS of aliasNames) {
-    if (!ALIAS_RE.test(ALIAS)) {
+    if (!ENV_ALIAS_RE.test(ALIAS)) {
       errors.push({ alias: ALIAS.toLowerCase(), message: `Invalid alias name: ${ALIAS}` });
       continue;
     }
     const raw = readAliasEnv(ALIAS, env);
     try {
-      const cfg = validateAliasConfig(ALIAS.toLowerCase(), raw, DEFAULTS);
+      const cfg = validateAliasConfig(ALIAS.toLowerCase(), raw, ALIAS_DEFAULTS);
       aliases[ALIAS.toLowerCase()] = cfg;
     } catch (err) {
       errors.push({ alias: ALIAS.toLowerCase(), message: err.message });
@@ -81,117 +121,14 @@ function readAliasEnv(ALIAS, env) {
   };
 }
 
-/**
- * Validate and normalize a single alias config.
- * @throws ConfigError on invalid input.
- * @returns A normalized config object.
- */
-export function validateAliasConfig(alias, raw, defaults = DEFAULTS) {
-  if (!raw.type || !VALID_TYPES.includes(raw.type)) {
-    throw new ConfigError(
-      `DB_${alias.toUpperCase()}_TYPE must be one of: ${VALID_TYPES.join(", ")}`,
-      { alias, field: "type", got: raw.type },
-    );
-  }
-
-  let host = raw.host;
-  let port = raw.port ? Number(raw.port) : undefined;
-  let user = raw.user;
-  let password = raw.password;
-  let database = raw.database;
-
-  if (raw.url) {
-    try {
-      const u = new URL(raw.url);
-      host ??= u.hostname;
-      port ??= u.port ? Number(u.port) : undefined;
-      user ??= u.username ? decodeURIComponent(u.username) : undefined;
-      password ??= u.password ? decodeURIComponent(u.password) : undefined;
-      database ??= u.pathname ? u.pathname.slice(1) : undefined;
-    } catch (err) {
-      throw new ConfigError(`DB_${alias.toUpperCase()}_URL is not a valid URL: ${err.message}`, {
-        alias,
-        field: "url",
-      });
-    }
-  }
-
-  if (!host) {
-    throw new ConfigError(`DB_${alias.toUpperCase()}_HOST (or _URL) is required`, {
-      alias,
-      field: "host",
-    });
-  }
-  port ??= DEFAULT_PORTS[raw.type];
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new ConfigError(`DB_${alias.toUpperCase()}_PORT must be an integer 1-65535`, {
-      alias,
-      field: "port",
-      got: port,
-    });
-  }
-
-  const mode = raw.mode ?? defaults.mode ?? DEFAULTS.mode;
-  if (!VALID_MODES.includes(mode)) {
-    throw new ConfigError(
-      `DB_${alias.toUpperCase()}_MODE must be one of: ${VALID_MODES.join(", ")}`,
-      { alias, field: "mode", got: mode },
-    );
-  }
-
-  const ssl = raw.ssl ?? defaults.ssl ?? DEFAULTS.ssl;
-  if (!VALID_SSL.includes(ssl)) {
-    throw new ConfigError(`DB_${alias.toUpperCase()}_SSL must be one of: ${VALID_SSL.join(", ")}`, {
-      alias,
-      field: "ssl",
-      got: ssl,
-    });
-  }
-
-  const timeoutMs = raw.timeoutMs
-    ? Number(raw.timeoutMs)
-    : (defaults.timeoutMs ?? DEFAULTS.timeoutMs);
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > HARD_CAPS.timeoutMs) {
-    throw new ConfigError(
-      `DB_${alias.toUpperCase()}_TIMEOUT_MS must be a positive integer ≤ ${HARD_CAPS.timeoutMs}`,
-      { alias, field: "timeoutMs", got: timeoutMs },
-    );
-  }
-
-  const maxRows = raw.maxRows ? Number(raw.maxRows) : (defaults.maxRows ?? DEFAULTS.maxRows);
-  if (!Number.isFinite(maxRows) || maxRows <= 0 || maxRows > HARD_CAPS.maxRows) {
-    throw new ConfigError(
-      `DB_${alias.toUpperCase()}_MAX_ROWS must be a positive integer ≤ ${HARD_CAPS.maxRows}`,
-      { alias, field: "maxRows", got: maxRows },
-    );
-  }
-
-  const poolMax = raw.poolMax ? Number(raw.poolMax) : (defaults.poolMax ?? DEFAULTS.poolMax);
-  if (!Number.isFinite(poolMax) || poolMax <= 0 || poolMax > HARD_CAPS.poolMax) {
-    throw new ConfigError(
-      `DB_${alias.toUpperCase()}_POOL_MAX must be a positive integer ≤ ${HARD_CAPS.poolMax}`,
-      { alias, field: "poolMax", got: poolMax },
-    );
-  }
-
-  return {
-    alias,
-    type: raw.type,
-    host,
-    port,
-    user,
-    password,
-    database,
-    mode,
-    ssl,
-    caCert: raw.caCert,
-    timeoutMs,
-    maxRows,
-    poolMax,
-  };
+/** @throws ConfigError on invalid input. */
+export function validateAliasConfig(alias, raw, defaults = ALIAS_DEFAULTS) {
+  return normalizeAliasConfig(alias, raw, { defaults, fail: envFail(alias) });
 }
 
-export const VALID_TYPES_EXPORT = VALID_TYPES;
-export const VALID_MODES_EXPORT = VALID_MODES;
-export const VALID_SSL_EXPORT = VALID_SSL;
-export const DEFAULT_PORTS_EXPORT = DEFAULT_PORTS;
+export {
+  VALID_TYPES as VALID_TYPES_EXPORT,
+  VALID_MODES as VALID_MODES_EXPORT,
+  VALID_SSL as VALID_SSL_EXPORT,
+  DEFAULT_PORTS as DEFAULT_PORTS_EXPORT,
+} from "./aliasConstants.js";
