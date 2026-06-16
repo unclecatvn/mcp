@@ -1,5 +1,5 @@
 ---
-"@unclecat/mcp-multi-db": minor
+"@unclecat/mcp-multi-db": patch
 ---
 
 refactor(db): modular lib/ architecture, driver dedup, and expanded test coverage.
