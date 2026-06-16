@@ -67,4 +67,42 @@ describe("analyzeQuery", () => {
   it("trims trailing semicolons and whitespace", () => {
     expect(analyzeQuery("  SELECT 1 ;  ").primaryType).toBe("SELECT");
   });
+
+  describe("EXPLAIN effectiveType (mode-bypass guard)", () => {
+    it("surfaces EXPLAIN as type but the inner verb as effectiveType", () => {
+      const r = analyzeQuery("EXPLAIN SELECT * FROM t");
+      expect(r.statements[0].type).toBe("EXPLAIN");
+      expect(r.statements[0].effectiveType).toBe("SELECT");
+      expect(r.primaryType).toBe("EXPLAIN");
+    });
+
+    it("classifies EXPLAIN ANALYZE DELETE as a write via effectiveType", () => {
+      const r = analyzeQuery("EXPLAIN ANALYZE DELETE FROM t");
+      expect(r.statements[0].type).toBe("EXPLAIN");
+      expect(r.statements[0].effectiveType).toBe("DELETE");
+    });
+
+    it("sees through the Postgres parenthesized option list", () => {
+      const r = analyzeQuery("EXPLAIN (ANALYZE, BUFFERS) UPDATE t SET x = 1");
+      expect(r.statements[0].effectiveType).toBe("UPDATE");
+    });
+
+    it("sees through VERBOSE and MySQL FORMAT=JSON wrappers", () => {
+      expect(analyzeQuery("EXPLAIN VERBOSE INSERT INTO t VALUES (1)").statements[0].effectiveType).toBe(
+        "INSERT",
+      );
+      expect(analyzeQuery("EXPLAIN FORMAT=JSON DROP TABLE t").statements[0].effectiveType).toBe("DROP");
+    });
+
+    it("unwraps EXPLAIN over a data-modifying CTE", () => {
+      const r = analyzeQuery(
+        "EXPLAIN ANALYZE WITH x AS (SELECT id FROM t) DELETE FROM t WHERE id IN (SELECT id FROM x)",
+      );
+      expect(r.statements[0].effectiveType).toBe("DELETE");
+    });
+
+    it("keeps bare EXPLAIN readonly via effectiveType", () => {
+      expect(analyzeQuery("EXPLAIN").statements[0].effectiveType).toBe("EXPLAIN");
+    });
+  });
 });

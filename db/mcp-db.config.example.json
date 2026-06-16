@@ -1,8 +1,26 @@
 {
   "$schema": "https://unpkg.com/@unclecat/mcp-multi-db/schema/config.schema.json",
   "logLevel": "info",
-  "defaultAlias": "unleashed",
+  "defaultAlias": "odoo_stg",
   "aliases": {
+    "odoo_stg": {
+      "type": "postgresql",
+      "url": "postgresql://ro:CHANGEME@localhost:5432/odoo_stg",
+      "mode": "readonly",
+      "defaultSchema": "public",
+      "displayName": "Odoo v18 Staging",
+      "description": "Local Odoo staging database. Read-only. Use for sale orders, partners, products, accounting, inventory, CRM.",
+      "tablesHint": [
+        "res_partner",
+        "sale_order",
+        "sale_order_line",
+        "product_product",
+        "product_template",
+        "account_move",
+        "stock_picking",
+        "crm_lead"
+      ]
+    },
     "unleashed": {
       "type": "postgresql",
       "url": "postgresql://ro:CHANGEME@unleashed-db.example.com:5432/main",

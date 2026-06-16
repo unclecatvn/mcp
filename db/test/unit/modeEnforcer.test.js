@@ -70,8 +70,41 @@ describe("enforceMode — multi-statement", () => {
   });
 });
 
+describe("enforceMode — EXPLAIN effectiveType", () => {
+  // EXPLAIN ANALYZE <write> executes the write on PostgreSQL; the gate must use
+  // effectiveType, not the readonly-looking surface type "EXPLAIN".
+  const explainDelete = {
+    primaryType: "EXPLAIN",
+    isMultiStatement: false,
+    statements: [{ type: "EXPLAIN", effectiveType: "DELETE" }],
+  };
+  const explainSelect = {
+    primaryType: "EXPLAIN",
+    isMultiStatement: false,
+    statements: [{ type: "EXPLAIN", effectiveType: "SELECT" }],
+  };
+
+  it("denies an EXPLAIN-wrapped write on a readonly alias", () => {
+    expect(() => enforceMode(explainDelete, "readonly", "prod")).toThrow(PermissionDeniedError);
+  });
+
+  it("reports the inner operation in the error, not EXPLAIN", () => {
+    try {
+      enforceMode(explainDelete, "readonly", "prod");
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect(err.details.operation).toBe("DELETE");
+      expect(err.details.requiredMode).toBe("readwrite");
+    }
+  });
+
+  it("still allows an EXPLAIN over a SELECT on readonly", () => {
+    expect(() => enforceMode(explainSelect, "readonly", "prod")).not.toThrow();
+  });
+});
+
 describe("enforceMode — error message", () => {
-  it("includes alias, op, current mode, and fix hint", () => {
+  it("includes alias, op, current mode, and env fix hint", () => {
     try {
       enforceMode(del, "readonly", "prod");
       throw new Error("should have thrown");
@@ -87,6 +120,16 @@ describe("enforceMode — error message", () => {
         currentMode: "readonly",
         requiredMode: "readwrite",
       });
+    }
+  });
+
+  it("includes JSON config fix hint when configSource is config_file", () => {
+    try {
+      enforceMode(del, "readonly", "prod", { configSource: "config_file" });
+      throw new Error("should have thrown");
+    } catch (err) {
+      expect(err.message).toMatch(/aliases\.prod\.mode/);
+      expect(err.message).not.toMatch(/DB_PROD_MODE/);
     }
   });
 });

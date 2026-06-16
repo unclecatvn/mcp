@@ -55,6 +55,22 @@ describe("parseConfigJson", () => {
     expect(logLevel).toBeUndefined();
   });
 
+  it("loads defaultSchema metadata", () => {
+    const json = JSON.stringify({
+      aliases: {
+        odoo: {
+          type: "postgresql",
+          host: "localhost",
+          database: "odoo",
+          defaultSchema: "public",
+        },
+      },
+    });
+    const { aliases, errors } = parseConfigJson(json);
+    expect(errors).toEqual([]);
+    expect(aliases.odoo.defaultSchema).toBe("public");
+  });
+
   it("explicit fields override URL components", () => {
     const json = JSON.stringify({
       aliases: {
