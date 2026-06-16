@@ -25,7 +25,7 @@ Avoid wide SELECT * scans on large tables; the server will inject a default
 LIMIT but the query still hits the database.
 
 If a query is blocked by the mode enforcer, the error message includes the
-exact env var to set to allow it.
+exact setting to change (env var or JSON config field).
 `;
 
 const ALIASES_RESOURCE_BASE = "db://aliases";
@@ -75,6 +75,7 @@ export class ResourceHandlers {
           ...(c.displayName !== undefined && { displayName: c.displayName }),
           ...(c.description !== undefined && { description: c.description }),
           ...(c.tablesHint !== undefined && { tablesHint: c.tablesHint }),
+          ...(c.defaultSchema !== undefined && { defaultSchema: c.defaultSchema }),
         };
       });
       return {

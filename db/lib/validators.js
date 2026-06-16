@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 export const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const LIKE_PATTERN_RE = /^[A-Za-z0-9_%]+$/;
 
 const Identifier = z.string().regex(IDENTIFIER_RE, {
   message: "must be a valid identifier (letters, digits, underscore; not starting with a digit)",
@@ -13,9 +14,21 @@ const Params = z.union([z.array(z.unknown()), z.record(z.unknown())]).optional()
 const MaxRows = z.number().int().positive().max(1_000_000).optional();
 const TimeoutMs = z.number().int().positive().max(600_000).optional();
 
+const OptionalAlias = Identifier.optional();
+
+const ListLimit = z.number().int().positive().max(500).optional();
+const ListOffset = z.number().int().min(0).optional();
+const NamePattern = z
+  .string()
+  .regex(LIKE_PATTERN_RE, {
+    message: "must contain only letters, digits, underscore, %, and _",
+  })
+  .max(128)
+  .optional();
+
 export const DbQueryInputSchema = z
   .object({
-    databaseAlias: Identifier,
+    databaseAlias: OptionalAlias,
     sql: Sql,
     params: Params,
     maxRows: MaxRows,
@@ -25,14 +38,17 @@ export const DbQueryInputSchema = z
 
 export const DbListTablesInputSchema = z
   .object({
-    databaseAlias: Identifier,
+    databaseAlias: OptionalAlias,
     schema: Identifier.optional(),
+    limit: ListLimit,
+    offset: ListOffset,
+    namePattern: NamePattern,
   })
   .strict();
 
 export const DbDescribeTableInputSchema = z
   .object({
-    databaseAlias: Identifier,
+    databaseAlias: OptionalAlias,
     tableName: Identifier,
     schema: Identifier.optional(),
   })
@@ -40,7 +56,7 @@ export const DbDescribeTableInputSchema = z
 
 export const DbTestConnectionInputSchema = z
   .object({
-    databaseAlias: Identifier,
+    databaseAlias: OptionalAlias,
   })
   .strict();
 
@@ -53,11 +69,27 @@ export const DbQueryHistoryInputSchema = z
 
 export const DbExplainQueryInputSchema = z
   .object({
-    databaseAlias: Identifier,
+    databaseAlias: OptionalAlias,
     sql: Sql,
     params: Params,
   })
   .strict();
+
+/**
+ * Resolve databaseAlias from tool input, falling back to server defaultAlias.
+ * @throws {import("./errors.js").ValidationError}
+ */
+export async function resolveDatabaseAlias(input, defaultAlias, toolName) {
+  const alias = input.databaseAlias ?? defaultAlias;
+  if (!alias) {
+    const { ValidationError } = await import("./errors.js");
+    throw new ValidationError(
+      `Invalid input for ${toolName}: databaseAlias is required when no defaultAlias is configured`,
+      { toolName, field: "databaseAlias" },
+    );
+  }
+  return { ...input, databaseAlias: alias };
+}
 
 /**
  * Parse input through a schema. On failure, throws ValidationError with a

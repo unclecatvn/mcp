@@ -3,15 +3,17 @@
  *
  * Public:
  *   analyzeQuery(sql) -> {
- *     statements: Array<{ type: string, raw: string }>,
- *     primaryType: string,    // strictest mode required
+ *     statements: Array<{ type: string, effectiveType: string, raw: string }>,
+ *     primaryType: string,    // strictest surface type (for row-limit/history)
  *     hasLimit: boolean,
  *     isMultiStatement: boolean,
  *   }
  *
  * The classifier uses leading-keyword detection on each statement after
- * stripping comments and string literals. CTE prefixes (WITH ...) are
- * unwrapped to find the actual operation.
+ * stripping comments and string literals. CTE prefixes (WITH ...) and EXPLAIN
+ * wrappers are unwrapped to find the actual operation. `effectiveType` is the
+ * unwrapped inner verb that determines the required permission mode — mode
+ * enforcement must gate on it, since `EXPLAIN ANALYZE <write>` executes writes.
  */
 
 const STATEMENT_RANK = {
@@ -96,7 +98,44 @@ function splitStatements(sql) {
     .filter((s) => s.length > 0);
 }
 
-function classifyStatement(stmt) {
+/**
+ * Strip a leading EXPLAIN wrapper and return the inner (explained) statement
+ * text, or null if `stmt` is not an EXPLAIN.
+ *
+ * Handles: `EXPLAIN <stmt>`, `EXPLAIN ANALYZE <stmt>`, `EXPLAIN VERBOSE <stmt>`,
+ * `EXPLAIN (ANALYZE, BUFFERS) <stmt>` (Postgres option list), and the MySQL
+ * `EXPLAIN FORMAT=JSON / EXTENDED / PARTITIONS <stmt>` forms.
+ */
+function stripExplainWrapper(stmt) {
+  const m = /^EXPLAIN\b/i.exec(stmt);
+  if (!m) return null;
+  let rest = stmt.slice(m[0].length).replace(/^\s+/, "");
+  if (rest.startsWith("(")) {
+    // Postgres parenthesized option list: EXPLAIN (ANALYZE, BUFFERS) ...
+    let depth = 0;
+    let i = 0;
+    for (; i < rest.length; i++) {
+      if (rest[i] === "(") depth++;
+      else if (rest[i] === ")") {
+        depth--;
+        if (depth === 0) {
+          i++;
+          break;
+        }
+      }
+    }
+    rest = rest.slice(i).replace(/^\s+/, "");
+  } else {
+    // Bare option keywords preceding the explained statement.
+    rest = rest.replace(
+      /^((ANALYZE|ANALYSE|VERBOSE|QUERY\s+PLAN|EXTENDED|PARTITIONS|FORMAT\s*=\s*\w+)\b\s*)+/i,
+      "",
+    );
+  }
+  return rest;
+}
+
+function classifyVerb(stmt) {
   let s = stmt;
   // Unwrap leading WITH ... <main verb>: scan for first non-WITH/SELECT keyword
   // pattern after CTE close. Easiest: drop leading "WITH ... )" segments.
@@ -134,13 +173,37 @@ function classifyStatement(stmt) {
   return kw;
 }
 
+/**
+ * Classify a single statement, returning both its surface `type` (e.g.
+ * `"EXPLAIN"`) and its `effectiveType` — the operation that actually determines
+ * the required permission mode.
+ *
+ * For `EXPLAIN [ANALYZE] <inner>` the effectiveType is the *inner* verb, because
+ * `EXPLAIN ANALYZE <write>` executes the write on PostgreSQL. Mode enforcement
+ * MUST gate on `effectiveType`, never on the readonly-looking surface "EXPLAIN".
+ *
+ * @returns {{ type: string, effectiveType: string }}
+ */
+function classifyStatement(stmt) {
+  const inner = stripExplainWrapper(stmt);
+  if (inner !== null) {
+    const effectiveType = inner === "" ? "EXPLAIN" : classifyVerb(inner);
+    return { type: "EXPLAIN", effectiveType };
+  }
+  const type = classifyVerb(stmt);
+  return { type, effectiveType: type };
+}
+
 export function analyzeQuery(sql) {
   if (typeof sql !== "string" || sql.trim() === "") {
     return { statements: [], primaryType: "UNKNOWN", hasLimit: false, isMultiStatement: false };
   }
   const cleaned = stripCommentsAndStrings(sql);
   const parts = splitStatements(cleaned);
-  const statements = parts.map((p) => ({ type: classifyStatement(p), raw: p }));
+  const statements = parts.map((p) => {
+    const { type, effectiveType } = classifyStatement(p);
+    return { type, effectiveType, raw: p };
+  });
 
   let primaryType = "SELECT";
   let primaryRank = 0;

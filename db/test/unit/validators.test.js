@@ -7,11 +7,18 @@ import {
   DbQueryHistoryInputSchema,
   DbExplainQueryInputSchema,
   IDENTIFIER_RE,
+  resolveDatabaseAlias,
 } from "../../lib/validators.js";
+import { ValidationError } from "../../lib/errors.js";
 
 describe("DbQueryInputSchema", () => {
   it("accepts minimal valid input", () => {
     const r = DbQueryInputSchema.safeParse({ databaseAlias: "prod", sql: "SELECT 1" });
+    expect(r.success).toBe(true);
+  });
+
+  it("accepts omitted databaseAlias", () => {
+    const r = DbQueryInputSchema.safeParse({ sql: "SELECT 1" });
     expect(r.success).toBe(true);
   });
 
@@ -102,6 +109,21 @@ describe("simple schemas", () => {
   it("DbListTablesInputSchema accepts alias only", () => {
     expect(DbListTablesInputSchema.safeParse({ databaseAlias: "prod" }).success).toBe(true);
   });
+  it("DbListTablesInputSchema accepts pagination filters", () => {
+    expect(
+      DbListTablesInputSchema.safeParse({
+        databaseAlias: "prod",
+        limit: 50,
+        offset: 10,
+        namePattern: "sale_%",
+      }).success,
+    ).toBe(true);
+  });
+  it("DbListTablesInputSchema rejects invalid namePattern", () => {
+    expect(
+      DbListTablesInputSchema.safeParse({ databaseAlias: "prod", namePattern: "sale-*" }).success,
+    ).toBe(false);
+  });
   it("DbTestConnectionInputSchema accepts alias only", () => {
     expect(DbTestConnectionInputSchema.safeParse({ databaseAlias: "prod" }).success).toBe(true);
   });
@@ -113,5 +135,18 @@ describe("simple schemas", () => {
     expect(
       DbExplainQueryInputSchema.safeParse({ databaseAlias: "p", sql: "SELECT 1" }).success,
     ).toBe(true);
+  });
+});
+
+describe("resolveDatabaseAlias", () => {
+  it("falls back to defaultAlias", async () => {
+    const resolved = await resolveDatabaseAlias({ sql: "SELECT 1" }, "prod", "db_query");
+    expect(resolved.databaseAlias).toBe("prod");
+  });
+
+  it("throws when alias cannot be resolved", async () => {
+    await expect(
+      resolveDatabaseAlias({ sql: "SELECT 1" }, undefined, "db_query"),
+    ).rejects.toBeInstanceOf(ValidationError);
   });
 });

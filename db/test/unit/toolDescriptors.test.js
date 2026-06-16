@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ToolHandlers } from "../../lib/toolHandlers.js";
+import { ToolDescriptorBuilder } from "../../lib/toolDescriptors.js";
 
 function fakeRegistry(configs) {
   return {
@@ -21,8 +21,8 @@ describe("ToolHandlers.toolDescriptors metadata injection", () => {
       },
       staging: { alias: "staging", type: "mysql", mode: "readwrite" },
     });
-    const handlers = new ToolHandlers(reg, { defaultAlias: "unleashed" });
-    const tools = handlers.toolDescriptors();
+    const builder = new ToolDescriptorBuilder(reg, { defaultAlias: "unleashed" });
+    const tools = builder.build();
     const dbQuery = tools.find((t) => t.name === "db_query");
 
     expect(dbQuery.description).toContain("Available aliases");
@@ -31,15 +31,15 @@ describe("ToolHandlers.toolDescriptors metadata injection", () => {
     expect(dbQuery.description).toContain("Production DB");
     expect(dbQuery.description).toContain("orders");
     expect(dbQuery.description).toContain("staging");
-    expect(dbQuery.description).toContain("Default alias if unspecified: unleashed");
+    expect(dbQuery.description).toContain("Default alias when databaseAlias is omitted: unleashed");
   });
 
   it("falls back to `<name> [<type>, <mode>]` when metadata is absent", () => {
     const reg = fakeRegistry({
       prod: { alias: "prod", type: "postgresql", mode: "readonly" },
     });
-    const handlers = new ToolHandlers(reg, {});
-    const tools = handlers.toolDescriptors();
+    const handlers = new ToolDescriptorBuilder(reg, {});
+    const tools = handlers.build();
     const dbQuery = tools.find((t) => t.name === "db_query");
     expect(dbQuery.description).toMatch(/prod\s+\[postgresql,\s*readonly\]/);
     expect(dbQuery.description).not.toContain("Default alias");
@@ -50,8 +50,8 @@ describe("ToolHandlers.toolDescriptors metadata injection", () => {
       a: { alias: "a", type: "postgresql", mode: "readonly" },
       b: { alias: "b", type: "mysql", mode: "readwrite" },
     });
-    const handlers = new ToolHandlers(reg, {});
-    const tools = handlers.toolDescriptors();
+    const handlers = new ToolDescriptorBuilder(reg, {});
+    const tools = handlers.build();
 
     const aliasTakingTools = [
       "db_query",
@@ -69,11 +69,25 @@ describe("ToolHandlers.toolDescriptors metadata injection", () => {
     }
   });
 
-  it("does not break when registry has zero aliases (defensive)", () => {
-    const reg = fakeRegistry({});
-    const handlers = new ToolHandlers(reg, {});
-    const tools = handlers.toolDescriptors();
+  it("omits databaseAlias from required when defaultAlias is set", () => {
+    const reg = fakeRegistry({
+      unleashed: {
+        alias: "unleashed",
+        type: "postgresql",
+        mode: "readonly",
+      },
+    });
+    const builder = new ToolDescriptorBuilder(reg, { defaultAlias: "unleashed" });
+    const tools = builder.build();
     const dbQuery = tools.find((t) => t.name === "db_query");
-    expect(dbQuery.inputSchema.properties.databaseAlias.enum).toEqual([]);
+    expect(dbQuery.inputSchema.required).toEqual(["sql"]);
+  });
+
+  it("requires databaseAlias when no defaultAlias is configured", () => {
+    const reg = fakeRegistry({
+      prod: { alias: "prod", type: "postgresql", mode: "readonly" },
+    });
+    const dbQuery = new ToolDescriptorBuilder(reg, {}).build().find((t) => t.name === "db_query");
+    expect(dbQuery.inputSchema.required).toEqual(["databaseAlias", "sql"]);
   });
 });
