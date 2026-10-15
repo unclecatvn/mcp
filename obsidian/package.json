@@ -1,0 +1,61 @@
+{
+  "name": "@unclecat/mcp-obsidian",
+  "version": "0.0.0",
+  "description": "MCP server for Obsidian vaults via the filesystem. Works without Obsidian running, supports multiple vaults with per-vault readonly/readwrite mode.",
+  "main": "index.js",
+  "type": "module",
+  "bin": {
+    "mcp-obsidian": "index.js"
+  },
+  "files": [
+    "index.js",
+    "mcpServer.js",
+    "lib/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node index.js",
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "format:fix": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "obsidian",
+    "markdown",
+    "notes",
+    "claude"
+  ],
+  "author": "UncleCat <quangnh.tkcn@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unclecatvn/mcp.git",
+    "directory": "obsidian"
+  },
+  "homepage": "https://github.com/unclecatvn/mcp/tree/master/obsidian#readme",
+  "bugs": {
+    "url": "https://github.com/unclecatvn/mcp/issues"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.11",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
