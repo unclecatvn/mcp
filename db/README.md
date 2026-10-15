@@ -1,34 +1,88 @@
 # @unclecat/mcp-multi-db
 
-> MCP server for MySQL/MariaDB, PostgreSQL, and SQL Server — parameterized queries, per-alias safety modes, query timeouts, row caps.
+> MCP server for MySQL, MariaDB, PostgreSQL and SQL Server. It runs parameterized queries only, applies a safety mode to each database, and caps row counts and query time.
 
-[![CI](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@unclecat/mcp-multi-db.svg)](https://www.npmjs.com/package/@unclecat/mcp-multi-db)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![CI](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 
-📖 Tiếng Việt: [README.vi.md](./README.vi.md) · 🛡️ [Security policy](../SECURITY.md)
+**English** · [Tiếng Việt](./README.vi.md) · [Security policy](../SECURITY.md)
+
+One server gives an AI assistant controlled SQL access to as many databases as you configure, and each database (an *alias*) has its own engine, credentials, limits and permission level. Every alias is read-only until you allow more.
+
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Configuration](#configuration)
+- [Security model](#security-model)
+- [Tools and resources](#tools-and-resources)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
 
 ## Features
 
-- **Parameterized queries only** — eliminates SQL injection at the API layer.
-- **Per-alias modes** — `readonly` (default), `readwrite`, `readwrite+ddl`.
-- **Multi-database** — MySQL, MariaDB, PostgreSQL, SQL Server side by side.
-- **Metadata-aware tool descriptions** — alias `description` + `tablesHint` are injected into MCP tool schemas so the AI picks the right database instead of guessing.
-- Query timeouts, row caps with overflow detection, SSL/TLS (`disable`/`prefer`/`require`/`verify`), connection pooling, retries with exponential backoff, structured logging.
+- **Parameterized queries only.** SQL injection is closed off at the API layer. `?` and `:named` placeholders are translated to each dialect's native form.
+- **A safety mode per alias:**
+  - `readonly` (the default);
+  - `readwrite`;
+  - `readwrite+ddl`.
 
-## Install
+  A multi-statement query is checked against the strictest mode any of its statements needs.
+- **Four engines side by side:** MySQL, MariaDB, PostgreSQL and SQL Server.
+- **Routes the model to the right database.** Each alias's `description`, `tablesHint` and `defaultSchema` is written into the tool descriptions, so the model knows which database holds what.
+- **Production guards:**
+  - query timeouts;
+  - row caps that report when results were truncated;
+  - SSL/TLS (`disable` / `prefer` / `require` / `verify`);
+  - connection pooling;
+  - retries with exponential backoff;
+  - structured logs on stderr.
 
-```bash
-npx @unclecat/mcp-multi-db
+## Quick start
+
+Requires **Node.js 20+**. Nothing to install; `npx` fetches the package.
+
+### 1. Describe your databases
+
+Create `mcp-db.config.json`. You can start from [`mcp-db.config.example.json`](./mcp-db.config.example.json):
+
+```jsonc
+{
+  "$schema": "https://unpkg.com/@unclecat/mcp-multi-db/schema/config.schema.json",
+  "defaultAlias": "prod",
+  "aliases": {
+    "prod": {
+      "type": "postgresql",
+      "url": "postgresql://readonly:secret@db.example.com:5432/main",
+      "mode": "readonly",
+      "displayName": "Production",
+      "description": "Read-only mirror of production: orders, customers, products.",
+      "tablesHint": ["orders", "customers", "products"],
+      "defaultSchema": "public"
+    },
+    "staging": {
+      "type": "mysql",
+      "host": "stg.example.com",
+      "user": "app",
+      "password": "secret",
+      "database": "appdb",
+      "mode": "readwrite"
+    }
+  }
+}
 ```
 
-Requires **Node ≥ 20**.
+The `$schema` line gives you autocompletion and validation in VS Code and JetBrains IDEs.
 
----
+### 2. Register the server
 
-## Quick start (recommended: JSON config)
+**Claude Code**
 
-Point the server at a single JSON file with `MCP_DB_CONFIG` (use an **absolute path** — the MCP process's working directory is set by the client):
+```bash
+claude mcp add multi-db -e MCP_DB_CONFIG=/absolute/path/to/mcp-db.config.json -- npx -y @unclecat/mcp-multi-db
+```
+
+**Claude Desktop, Cursor, Windsurf** (`claude_desktop_config.json`, `.cursor/mcp.json` or `.mcp.json`)
 
 ```json
 {
@@ -42,44 +96,7 @@ Point the server at a single JSON file with `MCP_DB_CONFIG` (use an **absolute p
 }
 ```
 
-`mcp-db.config.json`:
-
-```jsonc
-{
-  "$schema": "https://unpkg.com/@unclecat/mcp-multi-db/schema/config.schema.json",
-  "defaultAlias": "prod",
-  "aliases": {
-    "prod": {
-      "type": "postgresql",
-      "url": "postgresql://ro:pw@host:5432/main",
-      "mode": "readonly",
-      "displayName": "Production",
-      "description": "Read-only mirror of production. Orders, customers, products.",
-      "tablesHint": ["orders", "customers", "products"]
-    },
-    "staging": {
-      "type": "mysql",
-      "host": "stg.example.com", "user": "app", "password": "pw", "database": "appdb",
-      "mode": "readwrite"
-    }
-  }
-}
-```
-
-Startup log:
-
-```
-[info] event="loaded_aliases" source="config_file" count=2 \
-       aliases="prod(postgresql,readonly), staging(mysql,readwrite)" defaultAlias="prod"
-```
-
-> **Why JSON over env vars?** One block per alias instead of `DB_<ALIAS>_*` × 6+ variables, and you can attach `displayName`/`description`/`tablesHint` — those go into the AI's tool description so it routes queries to the right alias.
-
-Copy [`mcp-db.config.example.json`](./mcp-db.config.example.json) to start.
-
-### VS Code
-
-VS Code (1.102+) has native MCP support. Add the server in a workspace file `.vscode/mcp.json` (note the top-level key is `servers`, not `mcpServers`):
+**VS Code 1.102+** (`.vscode/mcp.json`; the top-level key is `servers`)
 
 ```json
 {
@@ -94,62 +111,57 @@ VS Code (1.102+) has native MCP support. Add the server in a workspace file `.vs
 }
 ```
 
-`${workspaceFolder}` resolves to an absolute path, so you can keep `mcp-db.config.json` in the repo root — no hardcoded machine path needed.
+Use an **absolute path** for `MCP_DB_CONFIG`, because the host decides the server's working directory. In VS Code, `${workspaceFolder}` expands to one.
 
----
+On startup the server logs what it loaded:
 
-## Configuration reference
+```
+[info] event="loaded_aliases" source="config_file" count=2 aliases="prod(postgresql,readonly), staging(mysql,readwrite)" defaultAlias="prod"
+```
 
-### Required per alias
+## Configuration
 
-| Field | What |
-|---|---|
-| `type` | `postgresql` \| `mysql` \| `mariadb` \| `sqlserver` |
-| `url` **or** `host` | Connection URL, OR explicit `host` (+ `port`, `user`, `password`, `database` as the driver needs) |
+### Connection (per alias)
 
-Set both → explicit fields override the URL's components.
-
-### Optional per alias (all default-safe)
-
-| Field | Default | Hard cap |
+| Field | Required | Description |
 |---|---|---|
-| `mode` | `readonly` | — |
-| `ssl` | `prefer` | — |
-| `caCert` | — | — |
-| `timeoutMs` | `30000` | `600000` |
-| `maxRows` | `10000` | `1000000` |
-| `poolMax` | `5` | `100` |
+| `type` | yes | `postgresql`, `mysql`, `mariadb` or `sqlserver` |
+| `url` | one of `url` / `host` | Connection URL |
+| `host`, `port`, `user`, `password`, `database` | one of `url` / `host` | Explicit fields. They override the matching parts of `url` when both are set. |
 
-### Metadata (JSON only — drives AI routing)
+### Limits and transport (per alias, all optional)
+
+| Field | Default | Hard cap | Description |
+|---|---|---|---|
+| `mode` | `readonly` | — | `readonly`, `readwrite` or `readwrite+ddl` |
+| `ssl` | `prefer` | — | `disable`, `prefer`, `require` or `verify` |
+| `caCert` | — | — | Custom CA certificate for TLS |
+| `timeoutMs` | `30000` | `600000` | Query timeout |
+| `maxRows` | `10000` | `1000000` | Row cap for unbounded `SELECT`s |
+| `poolMax` | `5` | `100` | Connection pool size |
+
+### Routing metadata (per alias, JSON config only)
 
 | Field | Effect |
 |---|---|
-| `displayName` | Short label next to the alias name in tool descriptions. |
-| `description` | One-line "what this DB is for". Goes into tool descriptions so the AI knows which alias to call. |
-| `tablesHint` | Likely table names — gives the AI a starting point. |
-| `defaultAlias` (top-level) | Hint shown in tool descriptions when the user doesn't name a DB. `databaseAlias` is still **required** at the schema level — this is a routing hint, not a server-side default. |
+| `displayName` | Short label shown next to the alias in tool descriptions. |
+| `description` | One line on what the database holds. The model uses it to pick the alias. |
+| `tablesHint` | Likely table names, to give the model a starting point. |
+| `defaultSchema` | Used by `db_list_tables` and `db_describe_table` when no `schema` is passed, e.g. `public`. |
 
-At startup the server injects this metadata into every tool's description, and adds a JSON-Schema `enum` to `databaseAlias` listing loaded aliases — clients cannot pass an alias that doesn't exist.
+### Top level
 
-### Server-wide
+| Field | Description |
+|---|---|
+| `aliases` | Required. A map of alias name to config. Names must match `^[a-z][a-z0-9_]*$`. |
+| `defaultAlias` | Optional. When it is set, tools can omit `databaseAlias` and this alias is used. |
+| `logLevel` | `debug`, `info` (the default), `warn` or `error`. The `MCP_DB_LOG_LEVEL` environment variable takes precedence. |
 
-| Setting | Default | How to set |
-|---|---|---|
-| Log level | `info` | env: `MCP_DB_LOG_LEVEL=debug` &nbsp;**or**&nbsp; JSON: `"logLevel": "debug"` (top-level) |
+The server also adds a JSON-Schema `enum` of the loaded aliases to `databaseAlias`, so clients cannot target an alias that does not exist.
 
-### Alias name rules
+### Alternative: environment variables
 
-| Source | Pattern | Example |
-|---|---|---|
-| JSON `aliases` key | `^[a-z][a-z0-9_]*$` *(lowercase)* | `prod`, `db1`, `analytics_2024` |
-| Env var `DB_<ALIAS>_*` | `^[A-Z][A-Z0-9_]*$` *(uppercase)* | `PROD`, `DB1`, `ANALYTICS_2024` |
-| Tool call `databaseAlias` | always lowercase | `"prod"` |
-
----
-
-## Alternative: env-var configuration
-
-When `MCP_DB_CONFIG` is **not** set, the server falls back to `DB_<ALIAS>_*` env vars. Use this for a simple single-DB case or when the client can't reference a file path.
+When `MCP_DB_CONFIG` is **not** set, aliases are read from `DB_<ALIAS>_*` variables. This is handy for a single database:
 
 ```json
 "env": {
@@ -158,98 +170,93 @@ When `MCP_DB_CONFIG` is **not** set, the server falls back to `DB_<ALIAS>_*` env
 }
 ```
 
-Field name mapping = SCREAMING_SNAKE_CASE of the JSON field. The full list: `DB_<ALIAS>_TYPE`, `_URL`, `_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_DATABASE`, `_MODE`, `_SSL`, `_CA_CERT`, `_TIMEOUT_MS`, `_MAX_ROWS`, `_POOL_MAX`. Env-var loader does **not** support metadata (`displayName`/`description`/`tablesHint`) — JSON-only.
+Available fields: `_TYPE`, `_URL`, `_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_DATABASE`, `_MODE`, `_SSL`, `_CA_CERT`, `_TIMEOUT_MS`, `_MAX_ROWS` and `_POOL_MAX`. Alias names are uppercase in variable names (`DB_PROD_*`) and lowercase in tool calls (`"prod"`). Routing metadata is available only in the JSON config. See [`.env.example`](./.env.example).
 
-**Loader priority (exclusive):**
-
-- `MCP_DB_CONFIG` set → JSON loader, `DB_*` env vars ignored entirely.
-- `MCP_DB_CONFIG` unset → env-var loader.
-- Both empty → server exits with code 1.
-
-See [.env.example](./.env.example) for the full env template.
-
----
+The two loaders are exclusive:
+- If `MCP_DB_CONFIG` is set, the JSON file is used and `DB_*` variables are ignored.
+- If it is not set, the `DB_*` variables are used.
+- If no alias loads either way, the server exits with code 1.
 
 ## Security model
 
-Every alias has a **mode** gating which SQL operations are allowed:
+### Modes
 
-| Mode | Allows |
+| Mode | Allowed statements |
 |---|---|
-| `readonly` *(default)* | SELECT, EXPLAIN, DESCRIBE, SHOW, USE |
-| `readwrite` | + INSERT, UPDATE, DELETE, MERGE |
-| `readwrite+ddl` | + CREATE, DROP, ALTER, TRUNCATE, GRANT, REVOKE, RENAME |
+| `readonly` *(default)* | `SELECT`, `EXPLAIN`, `DESCRIBE`, `SHOW`, `USE` |
+| `readwrite` | everything above, plus `INSERT`, `UPDATE`, `DELETE`, `MERGE` |
+| `readwrite+ddl` | everything above, plus `CREATE`, `DROP`, `ALTER`, `TRUNCATE`, `GRANT`, `REVOKE`, `RENAME` |
 
-Default is `readonly` — writes are blocked unless you opt in. Unknown statement types are rejected even at `readwrite+ddl`. For multi-statement queries the strictest mode wins. Blocked operations return `DB_PERMISSION_DENIED` naming the exact setting to change.
+Unknown statement types are rejected in every mode. A blocked statement returns `DB_PERMISSION_DENIED` together with the exact setting to change. MySQL connections run with `multipleStatements: false`.
 
 ### Parameterized queries
 
 ```js
-// Positional — params is an array
-{ databaseAlias: "prod", sql: "SELECT * FROM users WHERE id = ?", params: [42] }
+// Positional
+{ "databaseAlias": "prod", "sql": "SELECT * FROM users WHERE id = ?", "params": [42] }
 
-// Named — params is an object
-{ databaseAlias: "prod", sql: "SELECT * FROM users WHERE id = :id", params: { id: 42 } }
+// Named
+{ "databaseAlias": "prod", "sql": "SELECT * FROM users WHERE id = :id", "params": { "id": 42 } }
 ```
 
-The server translates placeholders to the dialect's native form (`$1`/`?`/`@p1`). Placeholders inside string literals and comments are ignored. Mismatched placeholder/param count throws a validation error.
+Placeholders become `$1`, `?` or `@p1` depending on the dialect. Placeholders inside string literals and comments are left alone, and a mismatch between placeholders and params is rejected.
 
-### Row caps
+### Row caps and timeouts
 
-SELECT without `LIMIT`/`TOP`/`FETCH` is capped at `maxRows` (default 10 000). Response includes `truncated: true` when the cap is hit. Per-query override:
+A `SELECT` without `LIMIT`, `TOP` or `FETCH` is capped at `maxRows`, and the response then includes `truncated: true`. A single call can lower the limits, but never above the alias settings or the global hard caps:
 
 ```js
-db_query({ databaseAlias: "prod", sql: "SELECT * FROM big_table", maxRows: 50, timeoutMs: 5000 })
+{ "databaseAlias": "prod", "sql": "SELECT * FROM big_table", "maxRows": 50, "timeoutMs": 5000 }
 ```
 
-Override is bounded by alias config and the global hard caps (1 000 000 rows, 600 000 ms).
+## Tools and resources
 
----
-
-## Tools
-
-Tool descriptions are rebuilt at startup to embed the loaded alias roster — so the AI sees what each DB is for, not just a list of names.
+Tool descriptions are rebuilt at startup to include the roster of loaded aliases.
 
 | Tool | Inputs | Description |
 |---|---|---|
-| `db_query` | `databaseAlias`, `sql`, `params?`, `maxRows?`, `timeoutMs?` | Execute parameterized SQL. |
-| `db_list_tables` | `databaseAlias`, `schema?` | List tables (optionally schema-filtered). |
-| `db_describe_table` | `databaseAlias`, `tableName`, `schema?` | Columns + indexes for one table. |
-| `db_test_connection` | `databaseAlias` | Lightweight `SELECT 1` healthcheck. |
-| `db_query_history` | `databaseAlias?`, `limit?` | Recent in-memory query metadata (last 50, no SQL text). |
-| `db_explain_query` | `databaseAlias`, `sql`, `params?` | Dialect-specific EXPLAIN. |
+| `db_query` | `databaseAlias`, `sql`, `params?`, `maxRows?`, `timeoutMs?` | Run parameterized SQL. |
+| `db_list_tables` | `databaseAlias`, `schema?`, `limit?`, `offset?`, `namePattern?` | List tables. Pages default to 100 rows (max 500), and `namePattern` takes a SQL `LIKE` pattern such as `sale_%`. |
+| `db_describe_table` | `databaseAlias`, `tableName`, `schema?` | Columns and indexes of one table. |
+| `db_explain_query` | `databaseAlias`, `sql`, `params?` | Dialect-specific `EXPLAIN`. |
+| `db_test_connection` | `databaseAlias` | Lightweight `SELECT 1` health check. |
+| `db_query_history` | `databaseAlias?`, `limit?` | Recent query metadata: the last 50 calls, without SQL text. |
 
-## Resources
+`databaseAlias` is optional on every tool when `defaultAlias` is configured.
 
-- `db://aliases` — JSON summary of loaded aliases. Includes `displayName`/`description`/`tablesHint` when set. No secrets.
-- `db://security-guide` — Markdown reference for modes + parameterized queries.
-
----
+| Resource | Content |
+|---|---|
+| `db://aliases` | JSON summary of the loaded aliases and their metadata. No secrets. |
+| `db://security-guide` | Markdown reference for modes and parameterized queries. |
 
 ## Troubleshooting
 
-| Code / event | Meaning | Fix |
-|---|---|---|
-| `DB_PERMISSION_DENIED` | Operation not permitted by alias mode | Raise `mode` in JSON (or `DB_<ALIAS>_MODE` env). |
-| `DB_TIMEOUT` | Query exceeded timeout | Raise alias `timeoutMs` or pass per-request `timeoutMs`. |
-| `DB_RESULT_TOO_LARGE` | Row cap exceeded | Add `LIMIT`, or raise `maxRows`. |
-| `DB_CONNECTION_FAILED` | Cannot reach DB | Verify host/port/credentials. Server retries 3× with backoff. |
-| `DB_VALIDATION_FAILED` | Bad identifier | `databaseAlias` / `tableName` / `schema` must match `^[A-Za-z_][A-Za-z0-9_]*$`. |
-| `DB_CONFIG_INVALID` | Bad env-var alias config | Message names the field + valid values. Other aliases still load. |
-| `Config file not readable at '...'` | `MCP_DB_CONFIG` path missing or unreadable | Use an **absolute** path; check file permissions. |
-| `Config file is not valid JSON: ...` | JSON syntax error | Validate the file (editors flag this when `$schema` is set). |
-| `Config schema error: aliases.<a>.<field>: ...` | JSON field invalid | Message names field + reason; fix or remove that alias entry. |
-| `defaultAlias '...' does not reference a loaded alias` | Top-level `defaultAlias` typo | Match an existing key under `aliases`. Server still starts; hint just ignored. |
-| `event="no_valid_aliases"` (exit 1) | No alias loaded | Set at least one alias in JSON or env. |
+| Code or message | Meaning and fix |
+|---|---|
+| `DB_PERMISSION_DENIED` | The alias mode does not allow the statement. Raise `mode` in the JSON config or in `DB_<ALIAS>_MODE`. |
+| `DB_TIMEOUT` | The query ran past its timeout. Raise the alias `timeoutMs` or pass `timeoutMs` on the call. |
+| `DB_RESULT_TOO_LARGE` | The row cap was exceeded. Add `LIMIT` or raise `maxRows`. |
+| `DB_CONNECTION_FAILED` | The database is unreachable. Check host, port and credentials. The server already retried 3 times with backoff. |
+| `DB_VALIDATION_FAILED` | An identifier is invalid. `databaseAlias`, `tableName` and `schema` must match `^[A-Za-z_][A-Za-z0-9_]*$`. |
+| `DB_CONFIG_INVALID` | One alias has a bad environment-variable config. The message names the field, and the other aliases still load. |
+| `Config file not readable at '...'` | Use an absolute `MCP_DB_CONFIG` path and check the file permissions. |
+| `Config file is not valid JSON` / `Config schema error: ...` | Fix the field the message names. With `$schema` set, your editor highlights it. |
+| `defaultAlias '...' does not reference a loaded alias` | Typo in `defaultAlias`. The server still starts, but without a default. |
+| `event="no_valid_aliases"` (exit 1) | No alias loaded. Configure at least one. |
 
-Verify what loaded: read the startup log (`event="loaded_aliases" source="..." count=..."`) or the `db://aliases` resource.
+To see what was loaded, read the `loaded_aliases` startup log line or the `db://aliases` resource.
 
----
+## Development
 
-## Contributing
+```bash
+pnpm install
+pnpm --filter @unclecat/mcp-multi-db test
+pnpm --filter @unclecat/mcp-multi-db test:coverage
+MCP_DB_CONFIG=/path/to/config.json node db/index.js
+```
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) at the monorepo root.
+Architecture notes for contributors are in [CLAUDE.md](./CLAUDE.md). The branch and release flow is described in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+[MIT](./LICENSE)

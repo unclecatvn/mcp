@@ -1,23 +1,49 @@
 # @unclecat/mcp-odoo
 
-> MCP server that exposes any Odoo v18+ instance to an MCP-compatible client (Claude Desktop, Claude Code, etc.) over JSON-RPC.
+> MCP server for [Odoo](https://www.odoo.com) 18+ over JSON-RPC. It lets an AI assistant search, report on, create and update records, and run business actions on any model.
 
-📖 Tiếng Việt: [README.vi.md](./README.vi.md) · 🛡️ [Security policy](../SECURITY.md)
+[![npm](https://img.shields.io/npm/v/@unclecat/mcp-odoo.svg)](https://www.npmjs.com/package/@unclecat/mcp-odoo)
+[![CI](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)](https://nodejs.org)
 
-- Multi-instance: configure as many Odoo servers as you like and route per call via a `connection` argument.
-- Auth: API key (preferred) or password — per connection.
-- 10 first-class tools covering the full read/write surface:
-  - Read: `search_read`, `search_count`, `name_search`, `read_group` (aggregates / GROUP BY for dashboards), `fields_get` (cached schema discovery).
-  - Write: `create`, `write`, `unlink`.
-  - Discovery: `list_connections`. Escape hatch: `call_method` for business actions, wizards, copy, default_get, custom RPCs.
-- Built-in instructions: a cheatsheet about Odoo domains, command tuples, common models, business actions, and stable error codes is sent on `initialize`, so the model knows how to compose calls without trial-and-error.
+**English** · [Tiếng Việt](./README.vi.md) · [Security policy](../SECURITY.md)
 
-## Install / run
+The server exposes Odoo's ORM through ten generic tools, so it works with every standard and custom model without per-model code. One server can talk to several Odoo instances, such as production, staging and a client's database, and the model picks one per call.
 
-No install needed — `npx` will fetch the latest published version.
+## Features
 
-```jsonc
-// claude_desktop_config.json
+- **The whole ORM surface:**
+  - schema discovery;
+  - searches, counts and fuzzy name lookup;
+  - `read_group` aggregates for reports;
+  - create, write and unlink;
+  - a `call_method` escape hatch for business actions such as confirming orders, posting invoices or running wizards.
+- **Several instances.** Configure any number of instances, each with its own credentials and timeout.
+- **API-key auth** (recommended) or a password, chosen per instance.
+- **Built-in Odoo cheatsheet.** On `initialize` the model receives notes on domain syntax, x2many command tuples, field formats and error codes, so it builds correct calls without trial and error.
+- **Stable error codes.** Odoo exceptions are mapped to codes such as `ODOO_ACCESS_DENIED` and `ODOO_USER_ERROR`, so the model knows whether to fix the call, retry or stop.
+
+## Quick start
+
+Requires **Node.js 20+** and an Odoo 18+ user with an API key. To create one, open your avatar menu → **My Profile → Account Security → New API Key**. If the API Keys section is hidden, enable developer mode first.
+
+### Claude Code
+
+```bash
+claude mcp add odoo \
+  -e ODOO_PROD_URL=https://erp.example.com \
+  -e ODOO_PROD_DB=production \
+  -e ODOO_PROD_USERNAME=admin@example.com \
+  -e ODOO_PROD_API_KEY=your-api-key \
+  -- npx -y @unclecat/mcp-odoo
+```
+
+### Claude Desktop, Cursor, Windsurf
+
+Add the server to `claude_desktop_config.json`, `.cursor/mcp.json` or the project's `.mcp.json`:
+
+```json
 {
   "mcpServers": {
     "odoo": {
@@ -26,116 +52,115 @@ No install needed — `npx` will fetch the latest published version.
       "env": {
         "ODOO_PROD_URL": "https://erp.example.com",
         "ODOO_PROD_DB": "production",
-        "ODOO_PROD_USERNAME": "admin",
-        "ODOO_PROD_API_KEY": "replace-with-your-api-key"
+        "ODOO_PROD_USERNAME": "admin@example.com",
+        "ODOO_PROD_API_KEY": "your-api-key"
       }
     }
   }
 }
 ```
 
-For Claude Code, the same config goes in `~/.claude/claude_code_config.json` (or use `claude mcp add`).
+### VS Code
 
-## Configuring connections
+In `.vscode/mcp.json` (VS Code 1.102+), use the same block under a top-level `servers` key and add `"type": "stdio"`.
 
-Pattern: `ODOO_<NAME>_<FIELD>`.
+## Configuration
 
-| Field        | Required        | Description                                                                          |
-| ------------ | --------------- | ------------------------------------------------------------------------------------ |
-| `URL`        | yes             | Base URL of the Odoo instance, e.g. `https://erp.example.com`                        |
-| `DB`         | yes             | Database name                                                                        |
-| `USERNAME`   | yes             | Login (email or username)                                                            |
-| `API_KEY`    | one-of required | Recommended. Create at Settings → Users → API Keys.                                  |
-| `PASSWORD`   | one-of required | Fallback when API keys aren't available.                                             |
-| `TIMEOUT_MS` | no              | Per-connection request timeout in ms. Default `60000`, clamped to `[1000, 600000]`.  |
+Each instance is a block of environment variables named `ODOO_<NAME>_<FIELD>`. `<NAME>` becomes the lowercase `connection` argument that tools take: `ODOO_PROD_*` becomes `"prod"`, and `ODOO_MY_PROD_*` becomes `"my_prod"`.
 
-`<NAME>` becomes the lowercase `connection` argument passed to every tool — `ODOO_PROD_*` → `"prod"`. Underscores in `<NAME>` are preserved (so `ODOO_MY_PROD_*` → `"my_prod"`).
+| Field | Required | Description |
+|---|---|---|
+| `URL` | yes | Base URL, e.g. `https://erp.example.com` |
+| `DB` | yes | Database name |
+| `USERNAME` | yes | Login (email or username) |
+| `API_KEY` | one of these two | Recommended. You can rotate and revoke it independently of the password. |
+| `PASSWORD` | one of these two | Fallback when API keys are not available |
+| `TIMEOUT_MS` | no | Request timeout. Default `60000`, clamped to the range 1,000–600,000 ms. |
 
-> **2FA gotcha:** if the Odoo user has two-factor authentication enabled, `PASSWORD` auth **will not work** — `authenticate()` rejects it. Use an API key instead; API keys bypass 2FA by design.
+A second instance is simply another block:
 
-A second connection is just another block:
-
-```jsonc
+```json
 "env": {
-  "ODOO_PROD_URL":      "https://erp.example.com",
-  "ODOO_PROD_DB":       "production",
-  "ODOO_PROD_USERNAME": "admin",
-  "ODOO_PROD_API_KEY":  "k-prod...",
+  "ODOO_PROD_URL": "https://erp.example.com",
+  "ODOO_PROD_DB": "production",
+  "ODOO_PROD_USERNAME": "admin@example.com",
+  "ODOO_PROD_API_KEY": "key-prod",
 
-  "ODOO_STAGING_URL":      "https://staging.example.com",
-  "ODOO_STAGING_DB":       "staging",
-  "ODOO_STAGING_USERNAME": "admin",
-  "ODOO_STAGING_PASSWORD": "p-staging..."
+  "ODOO_STAGING_URL": "https://staging.example.com",
+  "ODOO_STAGING_DB": "staging",
+  "ODOO_STAGING_USERNAME": "admin@example.com",
+  "ODOO_STAGING_PASSWORD": "password-staging"
 }
 ```
 
-Bad entries are logged on stderr and skipped — they never crash the server. A connection with both `API_KEY` and `PASSWORD` set will use `API_KEY` and warn.
+- An invalid block is logged to stderr and skipped. The server keeps running with the other instances.
+- If a block sets both `API_KEY` and `PASSWORD`, the API key is used and a warning is logged.
+
+> **Two-factor authentication.** Password login is rejected for users who have 2FA enabled. Use an API key, which works with 2FA by design.
 
 ## Tools
 
-| Tool               | When to use                                                                    | Returns                                       |
-| ------------------ | ------------------------------------------------------------------------------ | --------------------------------------------- |
-| `list_connections` | Once per session — discover available instances                                | `{ connections: [{ name, url, db, ... }] }`   |
-| `fields_get`       | Before any create/write, or when you need a model's schema (cached)            | `{ model, fields: { fieldName: {...} } }`     |
-| `search_read`      | Any query — combines search + read in one round-trip                           | `{ model, count, records: [...] }`            |
-| `search_count`     | Just a count — cheaper than search_read when rows aren't needed                | `{ model, count }`                            |
-| `name_search`      | Fuzzy lookup by display name — autocomplete, "find the Acme partner"           | `{ model, results: [[id, "name"], ...] }`    |
-| `read_group`       | GROUP BY + aggregates — dashboards, reports, KPIs ("monthly revenue by user")  | `{ model, count, groups: [...] }`             |
-| `create`           | Insert one record (dict) or many (array of dicts)                              | `{ model, id }` or `{ model, ids }`           |
-| `write`            | Update existing records (you must already have their ids)                      | `{ model, ids, success }`                     |
-| `unlink`           | Permanently delete records (most Odoo records prefer `active=false`)           | `{ model, ids, success }`                     |
-| `call_method`      | Everything else — business actions, wizards, copy, default_get, custom RPCs    | `{ model, method, result }`                   |
+Every tool except `list_connections` takes a `connection` argument.
 
-Every tool takes `connection` as its first argument. The server-info `instructions` block (see [`lib/instructions.js`](lib/instructions.js)) tells the model the recommended workflows, domain syntax, command tuples, field-type rules, and the meaning of every error code it can return.
+| Tool | Use it to | Returns |
+|---|---|---|
+| `list_connections` | Discover the configured instances, once per session | `{ connections: [{ name, url, db, username, authType, ... }] }` |
+| `fields_get` | Inspect a model's fields before writing. Results are cached. | `{ model, fields: { name: { type, required, relation, ... } } }` |
+| `search_read` | Query records with a domain, fields, limit and order | `{ model, count, records: [...] }` |
+| `search_count` | Count records without fetching them | `{ model, count }` |
+| `name_search` | Fuzzy lookup by display name | `{ model, results: [[id, "name"], ...] }` |
+| `read_group` | Group by fields and aggregate, for reports and KPIs | `{ model, count, groups: [...] }` |
+| `create` | Insert one record or a batch | `{ model, id }` or `{ model, ids }` |
+| `write` | Update records by id | `{ model, ids, success }` |
+| `unlink` | Delete records by id. Archiving with `active: false` is often safer. | `{ model, ids, success }` |
+| `call_method` | Run any other model method: business actions, wizards, `copy`, `default_get`, custom RPCs | `{ model, method, result }` |
 
-### Error codes Claude will see
+### Example prompts
 
-Errors come back as the text `[CODE] message` inside an MCP `isError` envelope. Codes are stable:
+- *"How many confirmed sales orders did we have last month, grouped by salesperson?"*
+- *"Find the partner Acme and list their unpaid invoices."*
+- *"Create a quotation for Acme with 10 office chairs and confirm it."*
+- *"Compare product prices between prod and staging."*
 
-| Code                       | Meaning                                                        | What the model should do                    |
-| -------------------------- | -------------------------------------------------------------- | ------------------------------------------- |
-| `ODOO_INPUT_INVALID`       | Tool args failed schema validation                             | Fix the call                                 |
-| `ODOO_UNKNOWN_CONNECTION`  | Unknown `connection` arg                                       | Re-run `list_connections`                    |
-| `ODOO_AUTH_FAILED`         | Bad credentials, or 2FA on a password user                     | Stop. Ask the operator.                      |
-| `ODOO_ACCESS_DENIED`       | User lacks permission for this model/operation                 | Do not retry                                 |
-| `ODOO_MISSING_RECORD`      | Id was deleted between search and call                         | Re-search                                    |
-| `ODOO_FIELD_INVALID`       | Field constraint failed (missing required, bad type, etc.)     | Read message, fix payload                    |
-| `ODOO_USER_ERROR`          | Business rule blocks the action                                | Usually a state transition is needed first   |
-| `ODOO_SERVER_ERROR`        | Unknown Odoo exception                                         | Treat as fatal for this call                 |
-| `ODOO_TRANSPORT_FAILED`    | Network/HTTP/timeout                                           | Safe to retry once                           |
+## Error codes
 
-## How the client model is supposed to use this
+Errors are returned as `[CODE] message` inside an MCP `isError` result.
 
-The server's `initialize` response includes an instruction block that teaches the model about:
+| Code | Meaning | What the model should do |
+|---|---|---|
+| `ODOO_INPUT_INVALID` | Arguments failed schema validation | Fix the call |
+| `ODOO_UNKNOWN_CONNECTION` | Unknown `connection` | Call `list_connections` again |
+| `ODOO_AUTH_FAILED` | Bad credentials, or a password login for a 2FA user | Stop and ask the operator |
+| `ODOO_ACCESS_DENIED` | The user lacks rights on the model or record | Do not retry |
+| `ODOO_MISSING_RECORD` | The record was deleted in the meantime | Search again |
+| `ODOO_FIELD_INVALID` | A constraint failed, e.g. a missing required field or a wrong type | Fix the payload |
+| `ODOO_USER_ERROR` | A business rule blocked the action | Usually another state transition is needed first |
+| `ODOO_SERVER_ERROR` | Unexpected Odoo exception | Treat as fatal for this call |
+| `ODOO_TRANSPORT_FAILED` | Network, HTTP or timeout error | Safe to retry once |
 
-- Odoo domain syntax (Polish prefix, leaf format, operators).
-- Many2one / One2many / Many2many write commands.
-- Date/datetime/monetary/binary/selection serialization rules.
-- The most commonly used models and business action methods.
-- Error categories (`AccessError`, `ValidationError`, `MissingError`, ...).
+## Security
 
-Read [`lib/instructions.js`](lib/instructions.js) for the exact text.
+- **Least privilege.** The model can do anything the configured Odoo user can do. Connect it as a dedicated user whose access rights match what you want the assistant to touch.
+- **Prefer API keys.** You can revoke an API key without changing the user's password.
+- **Plain HTTP.** `http://` URLs are accepted but trigger a startup warning, because credentials would travel in clear text.
+- **No secret leaks.** `list_connections` reports the auth *type*, never the key or password.
+- **Host visibility.** The MCP host sees every tool input and output, so avoid production credentials in shared or demo sessions.
 
 ## Logging
 
-The server logs structured key/value lines to **stderr** (the only stream stdio MCP allows). Set `MCP_ODOO_LOG_LEVEL=debug|info|warn|error` to filter (default: `info`).
-
-## Security notes
-
-- Use API keys over passwords whenever possible — they can be rotated/revoked independently of the user's main credential.
-- The server only speaks `https:` and `http:`; `http:` triggers a startup warning since credentials would be sent in clear text.
-- Secrets are never echoed back to the model — `list_connections` returns auth *type* but never the secret itself.
-- The MCP host (Claude Desktop / Code) sees the tool input/output. Don't pass production secrets through demos / shared sessions.
+Logs are structured key-value lines on **stderr**, because stdout carries the MCP protocol. Set the level with `MCP_ODOO_LOG_LEVEL`: `debug`, `info` (the default), `warn` or `error`.
 
 ## Development
 
 ```bash
-pnpm --filter @unclecat/mcp-odoo test          # run unit tests
-pnpm --filter @unclecat/mcp-odoo test:watch    # watch mode
-pnpm --filter @unclecat/mcp-odoo test:coverage # coverage report
-pnpm --filter @unclecat/mcp-odoo start         # run the server (stdio)
+pnpm install
+pnpm --filter @unclecat/mcp-odoo test
+pnpm --filter @unclecat/mcp-odoo test:coverage
+ODOO_PROD_URL=... ODOO_PROD_DB=... ODOO_PROD_USERNAME=... ODOO_PROD_API_KEY=... node odoo/index.js
 ```
+
+Architecture notes for contributors are in [CLAUDE.md](./CLAUDE.md). The branch and release flow is described in [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## License
 
-MIT — see [`LICENSE`](./LICENSE).
+[MIT](./LICENSE)
