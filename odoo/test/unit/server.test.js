@@ -171,6 +171,7 @@ describe("OdooMCPServer", () => {
         username: "admin",
         authType: "apikey",
         authenticated: false,
+        serverVersion: null,
         timeoutMs: 60000,
       },
     ]);

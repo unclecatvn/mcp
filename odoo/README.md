@@ -1,6 +1,6 @@
 # @unclecat/mcp-odoo
 
-> MCP server for [Odoo](https://www.odoo.com) 18+ over JSON-RPC. It lets an AI assistant search, report on, create and update records, and run business actions on any model.
+> MCP server for [Odoo](https://www.odoo.com) 18+ over JSON-2 (Odoo 19+) or JSON-RPC (Odoo 18). It lets an AI assistant search, report on, create and update records, and run business actions on any model.
 
 [![npm](https://img.shields.io/npm/v/@unclecat/mcp-odoo.svg)](https://www.npmjs.com/package/@unclecat/mcp-odoo)
 [![CI](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml)
@@ -97,6 +97,25 @@ A second instance is simply another block:
 - If a block sets both `API_KEY` and `PASSWORD`, the API key is used and a warning is logged.
 
 > **Two-factor authentication.** Password login is rejected for users who have 2FA enabled. Use an API key, which works with 2FA by design.
+
+### Odoo 18 vs 19
+
+On the first call, each connection checks `GET /web/version`, which only Odoo 19+ serves, and picks a protocol:
+
+| Server | Auth | Protocol |
+|---|---|---|
+| Odoo 19+ | API key | JSON-2: `POST /json/2/<model>/<method>` with a bearer API key |
+| Odoo 19+ | password | `/jsonrpc`. JSON-2 has no password login, and Odoo 19 logs a deprecation warning for every call. |
+| Odoo 18 | either | `/jsonrpc` |
+
+Odoo 19 deprecates `/jsonrpc` and plans to remove it in Odoo 22, so use an API key on 19+. `list_connections` shows the detected `serverVersion`: `null` before the first call, `0` for Odoo 18.
+
+- **`call_method` on JSON-2.** JSON-2 only accepts named parameters. `kwargs` are sent as they are, and `args` may only be `[[ids]]`. Any other positional argument makes that one call fall back to `/jsonrpc`.
+- **`read_group` on Odoo 19+.** Odoo 19 deprecates `read_group`, so the tool calls `formatted_read_group` and reshapes the result to the same shape: aggregates keyed by field or alias, `__count` (`<field>_count` in lazy mode), `__domain` and `__context`. The differences are:
+  - every aggregate needs a function (`amount_total:sum`, not `amount_total`);
+  - date groupbys need a granularity (`date_order:month`);
+  - date group values are `["2026-01-01", "January 2026"]` (range start and label) rather than just the label, and there is no `__range`;
+  - lazy mode does not add empty `group_expand` groups, such as empty kanban stages.
 
 ## Tools
 
