@@ -74,9 +74,11 @@ Work on one package with `pnpm --filter <package-name> <script>`, for example `p
 
 ## Releasing
 
-1. Open a feature branch, add a changeset (`pnpm changeset`) and open a PR into `staging`.
-2. Promote `staging` to `master` with a PR.
-3. The release workflow opens a **version packages** PR. Merging it publishes every bumped package to npm.
+1. Open a feature branch from `master`, add a changeset (`pnpm changeset`) with the right [semver bump](./CONTRIBUTING.md#versioning), and open a PR into `master`.
+2. After the merge, the release workflow opens or updates a **version packages** PR that collects every pending change.
+3. Merging that PR publishes the bumped packages to npm with provenance and creates GitHub Releases with links to the PRs.
+
+Docs- and test-only changes never publish a release.
 
 Details are in [CONTRIBUTING.md](./CONTRIBUTING.md).
 

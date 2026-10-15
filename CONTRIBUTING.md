@@ -29,10 +29,10 @@ This is a pnpm monorepo. Each MCP server is its own package directory at the rep
 
 ## Branches
 
-- **`master`** — default branch. Release workflow triggers on push here. Always green.
-- **`staging`** — integration branch used to assemble multiple feature branches before opening a PR into `master`. CI runs on push to `staging` too.
+- **`master`** is the only long-lived branch. It must always be green, and the release workflow runs on every push to it.
+- All work happens on short-lived feature branches (`feat/...`, `fix/...`, `docs/...`, `ci/...`) that are merged into `master` through a PR.
 
-Direct pushes to `master` are not allowed. The normal flow is: feature branch → PR into `staging` → PR from `staging` into `master`.
+Do not push to `master` directly. There is no integration branch: the **version packages** PR described below already collects every merged change until a maintainer decides to release.
 
 ## Common commands
 
@@ -55,20 +55,34 @@ pnpm --filter @unclecat/mcp-multi-db test:watch
 
 ## Pull-request flow
 
-1. Branch from `staging` (or `master` for hotfix).
+1. Branch from `master`.
 2. Make your changes in the relevant package directory.
-3. **Run `pnpm changeset`** and pick the package(s), bump type (patch/minor/major), and write a clear summary. Commit the generated `.changeset/<name>.md`.
-4. Push and open a PR.
+3. **Run `pnpm changeset`**, pick the package(s) and the bump type (see [Versioning](#versioning)), and write the summary for users: what changed for them, not how. Commit the generated `.changeset/<name>.md`. Docs- or test-only changes need no changeset and never publish a release.
+4. Push and open a PR into `master`.
 5. CI runs lint, format, tests, and audit across all packages on Node 20/22. The aggregate check `ci-success` must pass.
 6. After review and merge into `master`, the Release workflow opens (or updates) a **"chore(release): version packages"** PR aggregating pending changesets.
 7. A maintainer merging the Version PR triggers automatic publish to npm (with provenance) and creates a GitHub Release for each package — tags use Changesets' scoped form, e.g. `@unclecat/mcp-multi-db@1.2.3`.
+
+## Versioning
+
+Packages follow [semantic versioning](https://semver.org), so users can pin a major version (`npx -y @unclecat/mcp-odoo@1`) and still receive every fix and feature safely:
+
+| Bump | Use it for |
+|---|---|
+| `patch` | Bug fixes, dependency updates, performance |
+| `minor` | New tools, new options, new output fields, all backward compatible |
+| `major` | Removed or renamed tools, arguments, error codes or env vars, and changed defaults |
+
+If a PR changes shipped code but has no changeset, the release workflow adds a `patch` changeset from the commit subject, so Dependabot updates still get released. Breaking changes always need a hand-written `major` changeset.
+
+All packages are still `0.0.x`. `1.0.0` is planned together with the Odoo refactor, and from then on the table above applies strictly.
 
 ## Releasing manually (maintainer)
 
 In the rare case the bot is unavailable:
 
 ```bash
-pnpm changeset version           # bumps versions, updates CHANGELOG
+GITHUB_TOKEN=$(gh auth token) pnpm changeset version   # bumps versions, writes CHANGELOG with PR links
 pnpm install --no-frozen-lockfile
 git commit -am "chore(release): version packages"
 git push
