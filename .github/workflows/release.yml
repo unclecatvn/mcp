@@ -77,10 +77,13 @@ jobs:
           fi
 
           # Detect changed workspace packages between this commit and its first parent
+          # Package dirs come from pnpm-workspace.yaml (root excluded), so new packages are picked up automatically
           base=$(git rev-parse HEAD^1)
+          pkgs=$(pnpm -r exec pwd | xargs -n1 basename)
           changed_dirs=$(git diff --name-only "$base" HEAD \
-            | awk -F/ '$1=="db" || $1=="odoo" {print $1}' \
-            | sort -u)
+            | cut -d/ -f1 \
+            | grep -Fx "$pkgs" \
+            | sort -u || true)
 
           if [ -z "$changed_dirs" ]; then
             echo "No workspace package files changed — no release this run"
