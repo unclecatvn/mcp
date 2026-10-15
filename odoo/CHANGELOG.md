@@ -1,5 +1,11 @@
 # @unclecat/mcp-odoo
 
+## 0.0.3
+
+### Patch Changes
+
+- 6156855: docs: rewrite the README (English + Vietnamese) with a consistent structure: quick start for Claude Code, Claude Desktop/Cursor and VS Code, configuration and tool reference, safety notes, troubleshooting. `@unclecat/mcp-obsidian` now ships `README.vi.md`. db docs now cover `defaultAlias` (optional `databaseAlias`), `defaultSchema` and `db_list_tables` pagination.
+
 ## 0.0.2
 
 ### Patch Changes
