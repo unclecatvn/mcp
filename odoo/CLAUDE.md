@@ -33,7 +33,7 @@ Plain JavaScript (ESM). No build step — `bin/mcp-odoo` shells straight to `ind
 | `mcpServer.js`        | Parses env, logs to stderr, builds one `OdooClient` per connection, creates `McpServer` |
 | `lib/config.js`       | `parseEnv()` — discovers `ODOO_<NAME>_*` blocks; never throws on per-connection error  |
 | `lib/errors.js`       | `OdooError(code, message)` (message pre-prefixed `[CODE]`) + `fromOdooError()`         |
-| `lib/client.js`       | `OdooClient` — JSON-RPC fetch wrapper, lazy `authenticate()` with in-flight dedup      |
+| `lib/client.js`       | `OdooClient` — JSON-2 (19+, API key) or `/jsonrpc` transport, lazy `authenticate()`    |
 | `lib/toolHandlers.js` | `registerTools()` — the 10 tools, their zod input schemas and annotations              |
 | `lib/instructions.js` | The cheatsheet sent on `initialize` (keep under 2 KB — hosts truncate it)              |
 
@@ -54,6 +54,8 @@ Write: `create`, `write`, `unlink`, `call_method` (the last three `destructiveHi
 - **Odoo 18 vs 19 signatures**: pass parameters whose names differ between versions positionally (e.g. `name_search`'s 2nd param is `args` in 18, `domain` in 19).
 - **Secrets**: `list_connections` exposes `authType` but never `secret`. `OdooClient.describe()` is the single source of truth for that contract — keep it lean.
 - **Auth lazy + deduped**: don't call `_rpc("common","authenticate",...)` directly from handlers; always go through `client.callKw()` which guarantees one in-flight authenticate even under concurrent first calls.
+- **Two transports**: `getServerVersion()` probes `GET /web/version` once per connection (404 on Odoo 18 → `0`). Odoo 19+ with `authType === "apikey"` uses JSON-2 (`POST /json/2/<model>/<method>`, bearer key, `X-Odoo-Database`, named params only); everything else uses `/jsonrpc` execute_kw. Typed methods pass both shapes to `_execute(model, method, args, kwargs, named)`; `named = null` forces `/jsonrpc` (e.g. `call_method` with positional args beyond `ids`).
+- **read_group on 19+** goes to `formatted_read_group` and is reshaped to read_group's output (`toFormattedReadGroup` in `client.js`). Keep the documented differences in README in sync if you touch it.
 
 ### Adding a new tool
 

@@ -3,7 +3,7 @@
  * about 2 KB (Claude Code does), so keep it under that — tool-specific detail
  * belongs in the tool descriptions, not here.
  */
-export const INSTRUCTIONS = `Connected to Odoo v18+ over JSON-RPC. Every tool except list_connections needs a "connection" name from list_connections.
+export const INSTRUCTIONS = `Connected to Odoo v18+ (JSON-2 on 19+, JSON-RPC on 18). Every tool except list_connections needs a "connection" name from list_connections.
 
 Workflow:
 - fields_get before create/write (required fields, types, selection keys).

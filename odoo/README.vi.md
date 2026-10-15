@@ -1,6 +1,6 @@
 # @unclecat/mcp-odoo
 
-> MCP server cho [Odoo](https://www.odoo.com) 18+ qua JSON-RPC. Server cho phép trợ lý AI tìm kiếm, lập báo cáo, tạo và cập nhật bản ghi, cũng như chạy các business action trên bất kỳ model nào.
+> MCP server cho [Odoo](https://www.odoo.com) 18+ qua JSON-2 (Odoo 19+) hoặc JSON-RPC (Odoo 18). Server cho phép trợ lý AI tìm kiếm, lập báo cáo, tạo và cập nhật bản ghi, cũng như chạy các business action trên bất kỳ model nào.
 
 [![npm](https://img.shields.io/npm/v/@unclecat/mcp-odoo.svg)](https://www.npmjs.com/package/@unclecat/mcp-odoo)
 [![CI](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml)
@@ -97,6 +97,25 @@ Instance thứ hai chỉ đơn giản là một khối khác:
 - Nếu một khối đặt cả `API_KEY` lẫn `PASSWORD`, API key được dùng và một cảnh báo được ghi log.
 
 > **Xác thực hai yếu tố (2FA).** Đăng nhập bằng mật khẩu bị từ chối đối với user đã bật 2FA. Hãy dùng API key, vốn hoạt động được với 2FA theo thiết kế.
+
+### Odoo 18 và 19
+
+Ở lần gọi đầu tiên, mỗi connection kiểm tra `GET /web/version` (chỉ Odoo 19+ có route này) rồi chọn giao thức:
+
+| Server | Xác thực | Giao thức |
+|---|---|---|
+| Odoo 19+ | API key | JSON-2: `POST /json/2/<model>/<method>` với bearer API key |
+| Odoo 19+ | mật khẩu | `/jsonrpc`. JSON-2 không hỗ trợ đăng nhập bằng mật khẩu, và Odoo 19 ghi log cảnh báo deprecated cho mỗi lần gọi. |
+| Odoo 18 | cả hai | `/jsonrpc` |
+
+Odoo 19 đánh dấu `/jsonrpc` là deprecated và dự kiến xoá ở Odoo 22, vì vậy trên 19+ hãy dùng API key. `list_connections` hiển thị `serverVersion` đã phát hiện: `null` trước lần gọi đầu tiên, `0` với Odoo 18.
+
+- **`call_method` trên JSON-2.** JSON-2 chỉ nhận tham số có tên. `kwargs` được gửi nguyên trạng, còn `args` chỉ được là `[[ids]]`. Nếu có positional argument khác, riêng lần gọi đó sẽ quay về `/jsonrpc`.
+- **`read_group` trên Odoo 19+.** Odoo 19 đánh dấu `read_group` là deprecated, nên tool gọi `formatted_read_group` rồi đưa kết quả về đúng shape cũ: aggregate theo tên field hoặc alias, `__count` (`<field>_count` ở lazy mode), `__domain` và `__context`. Các khác biệt:
+  - mọi aggregate phải có hàm (`amount_total:sum`, không phải `amount_total`);
+  - groupby theo field ngày phải có granularity (`date_order:month`);
+  - giá trị group theo ngày là `["2026-01-01", "January 2026"]` (đầu khoảng và nhãn) thay vì chỉ nhãn, và không có `__range`;
+  - lazy mode không thêm các group rỗng từ `group_expand`, ví dụ stage kanban rỗng.
 
 ## Tool
 

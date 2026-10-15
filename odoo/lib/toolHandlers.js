@@ -47,7 +47,8 @@ export function registerTools(server, clients) {
     {
       description:
         "List the configured Odoo instances (name, url, db, username, authType — never secrets). " +
-        "Use `name` as the `connection` argument of every other tool.",
+        "Use `name` as the `connection` argument of every other tool. serverVersion is the Odoo " +
+        "major version (null until the first call, 0 = Odoo 18).",
       annotations: READ_ONLY,
     },
     async () => ok({ connections: [...clients.values()].map((c) => c.describe()) }),
@@ -180,6 +181,8 @@ export function registerTools(server, clients) {
         "         integer parts such as :month_number, :day_of_week).",
         "lazy (default true) groups by the first groupby only; pass false for a flat table across all of them.",
         "Each group carries `__domain` — pass it to search_read to list that group's records.",
+        "Odoo 19+ (serverVersion >= 19): every aggregate needs a func, date groupbys need a suffix, date",
+        'group values are ["2026-01-01","January 2026"], and lazy mode adds no empty group_expand groups.',
         'EXAMPLE: { "connection": "prod", "model": "sale.order", "domain": [["state","=","sale"]],',
         '           "aggregates": ["amount_total:sum"], "groupby": ["user_id","date_order:month"], "lazy": false }',
       ].join("\n"),
@@ -270,6 +273,8 @@ export function registerTools(server, clients) {
         "Call any public model method (model.method(*args, **kwargs) via execute_kw): business actions,",
         "wizards, anything that is not plain CRUD. The return value comes back as `result`.",
         "Record methods take the ids wrapped as the first positional arg: args = [[id]].",
+        "Odoo 19+ with an API key uses JSON-2 (named params only): args beyond [[ids]] fall back to the",
+        "deprecated /jsonrpc, so prefer kwargs (names follow the version, e.g. default_get(fields) on 19).",
         "  sale.order action_confirm / action_cancel     account.move action_post / button_draft",
         "  purchase.order button_confirm                  stock.picking button_validate",
         '  default_get  args=[["partner_id","company_id"]]       defaults before create',
