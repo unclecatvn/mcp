@@ -1,4 +1,4 @@
-import { AuthError, TransportError, fromOdooError } from "./errors.js";
+import { OdooError, fromOdooError } from "./errors.js";
 
 const DEFAULT_TIMEOUT_MS = 60_000;
 
@@ -66,56 +66,33 @@ export class OdooClient {
       id: Math.floor(Math.random() * 1e9),
     };
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-
-    let res;
+    let json;
     try {
-      res = await this._fetch(`${this.url}/jsonrpc`, {
+      const res = await this._fetch(`${this.url}/jsonrpc`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         body: JSON.stringify(body),
-        signal: controller.signal,
+        // Unlike a setTimeout cleared after the headers, this also bounds the body read.
+        signal: AbortSignal.timeout(this.timeoutMs),
       });
-    } catch (e) {
-      if (e?.name === "AbortError") {
-        throw new TransportError(
-          `Odoo request timed out after ${this.timeoutMs}ms (connection=${this.name})`,
-          { connection: this.name, timeoutMs: this.timeoutMs },
-          e,
+      if (!res.ok) {
+        throw new OdooError(
+          "ODOO_TRANSPORT_FAILED",
+          `Odoo HTTP ${res.status} ${res.statusText} (connection=${this.name})`,
         );
       }
-      throw new TransportError(
-        `Failed to reach Odoo at ${this.url} (connection=${this.name}): ${e.message}`,
-        { connection: this.name, url: this.url },
-        e,
-      );
-    } finally {
-      clearTimeout(timer);
-    }
-
-    if (!res.ok) {
-      throw new TransportError(
-        `Odoo HTTP ${res.status} ${res.statusText} (connection=${this.name})`,
-        { connection: this.name, status: res.status },
-      );
-    }
-
-    let json;
-    try {
       json = await res.json();
     } catch (e) {
-      throw new TransportError(
-        `Odoo returned non-JSON response (connection=${this.name}): ${e.message}`,
-        { connection: this.name },
+      if (e instanceof OdooError) throw e;
+      const reason = e?.name === "TimeoutError" ? `timed out after ${this.timeoutMs}ms` : e.message;
+      throw new OdooError(
+        "ODOO_TRANSPORT_FAILED",
+        `Odoo request to ${this.url} failed (connection=${this.name}): ${reason}`,
         e,
       );
     }
 
-    if (json.error) {
-      throw fromOdooError(json.error, { connection: this.name });
-    }
-
+    if (json.error) throw fromOdooError(json.error);
     return json.result;
   }
 
@@ -135,11 +112,11 @@ export class OdooClient {
         {},
       ]);
       if (!uid || typeof uid !== "number") {
-        throw new AuthError(
+        throw new OdooError(
+          "ODOO_AUTH_FAILED",
           `Authentication failed for connection "${this.name}" (db=${this.db}, user=${this.username}). ` +
             `Check the ${this.authType === "apikey" ? "API key" : "password"} and database name. ` +
             `Note: users with 2FA enabled cannot authenticate with their password — use an API key instead.`,
-          { connection: this.name, db: this.db, username: this.username, authType: this.authType },
         );
       }
       this.uid = uid;
@@ -188,17 +165,6 @@ export class OdooClient {
     return result;
   }
 
-  /** Drop the fields_get cache (test helper / future invalidation hook). */
-  clearFieldsCache(model) {
-    if (model === undefined) {
-      this._fieldsCache.clear();
-      return;
-    }
-    for (const key of this._fieldsCache.keys()) {
-      if (key.startsWith(`${model}|`)) this._fieldsCache.delete(key);
-    }
-  }
-
   async searchRead(model, { domain = [], fields, limit, offset, order } = {}) {
     const kwargs = omitUndefined({ domain, fields, limit, offset, order });
     return this.callKw(model, "search_read", [], kwargs);
@@ -208,9 +174,9 @@ export class OdooClient {
     return this.callKw(model, "search_count", [domain], omitUndefined({ limit }));
   }
 
-  async nameSearch(model, { name = "", domain, operator, limit } = {}) {
-    const kwargs = omitUndefined({ name, args: domain, operator, limit });
-    return this.callKw(model, "name_search", [], kwargs);
+  async nameSearch(model, { name = "", domain = [], operator, limit } = {}) {
+    // Positional on purpose: the 2nd parameter is `args` in Odoo 18 but `domain` in 19.
+    return this.callKw(model, "name_search", [name, domain], omitUndefined({ operator, limit }));
   }
 
   async readGroup(model, { domain = [], aggregates, groupby, offset, limit, orderby, lazy } = {}) {

@@ -84,144 +84,69 @@ describe("OdooClient", () => {
     expect(authCalls).toHaveLength(1);
   });
 
-  it("throws AuthError when authenticate returns false", async () => {
+  it("throws ODOO_AUTH_FAILED when authenticate returns false", async () => {
     const { fn } = makeFetch([{ json: { result: false } }]);
     const client = mkClient({}, fn);
     await expect(client.searchRead("res.partner")).rejects.toMatchObject({
-      name: "AuthError",
       code: "ODOO_AUTH_FAILED",
     });
   });
 
-  it("maps odoo.exceptions.UserError → OdooUserError", async () => {
+  it.each([
+    ["odoo.exceptions.UserError", "ODOO_USER_ERROR"],
+    ["odoo.exceptions.RedirectWarning", "ODOO_USER_ERROR"],
+    ["odoo.exceptions.ValidationError", "ODOO_FIELD_INVALID"],
+    ["odoo.exceptions.MissingError", "ODOO_MISSING_RECORD"],
+    ["odoo.exceptions.AccessError", "ODOO_ACCESS_DENIED"],
+    ["odoo.exceptions.AccessDenied", "ODOO_AUTH_FAILED"],
+    ["some.weird.exception", "ODOO_SERVER_ERROR"],
+  ])("maps %s → %s with a [CODE]-prefixed message", async (name, code) => {
     const { fn } = makeFetch([
       { json: { result: 1 } },
-      {
-        json: {
-          error: {
-            code: 200,
-            message: "Odoo Server Error",
-            data: { name: "odoo.exceptions.UserError", message: "Cannot delete posted invoice" },
-          },
-        },
-      },
+      { json: { error: { message: "Odoo Server Error", data: { name, message: "boom" } } } },
     ]);
     const client = mkClient({}, fn);
     await expect(client.searchRead("res.partner")).rejects.toMatchObject({
-      name: "OdooUserError",
-      code: "ODOO_USER_ERROR",
-      message: "Cannot delete posted invoice",
+      name: "OdooError",
+      code,
+      message: `[${code}] boom`,
     });
   });
 
-  it("maps odoo.exceptions.ValidationError → OdooFieldError", async () => {
-    const { fn } = makeFetch([
-      { json: { result: 1 } },
-      {
-        json: {
-          error: {
-            data: { name: "odoo.exceptions.ValidationError", message: "Field 'name' is required" },
-          },
-        },
-      },
-    ]);
+  it("translates non-2xx HTTP responses into ODOO_TRANSPORT_FAILED", async () => {
+    const { fn } = makeFetch([{ ok: false, status: 502, statusText: "Bad Gateway", json: {} }]);
     const client = mkClient({}, fn);
     await expect(client.searchRead("res.partner")).rejects.toMatchObject({
-      name: "OdooFieldError",
-      code: "ODOO_FIELD_INVALID",
-    });
-  });
-
-  it("maps odoo.exceptions.MissingError → OdooMissingRecordError", async () => {
-    const { fn } = makeFetch([
-      { json: { result: 1 } },
-      {
-        json: {
-          error: {
-            data: { name: "odoo.exceptions.MissingError", message: "Record does not exist" },
-          },
-        },
-      },
-    ]);
-    const client = mkClient({}, fn);
-    await expect(client.searchRead("res.partner")).rejects.toMatchObject({
-      name: "OdooMissingRecordError",
-      code: "ODOO_MISSING_RECORD",
-    });
-  });
-
-  it("maps odoo.exceptions.AccessError → OdooAccessError", async () => {
-    const { fn } = makeFetch([
-      { json: { result: 1 } },
-      {
-        json: {
-          error: {
-            data: { name: "odoo.exceptions.AccessError", message: "Permission denied on model X" },
-          },
-        },
-      },
-    ]);
-    const client = mkClient({}, fn);
-    await expect(client.searchRead("res.partner")).rejects.toMatchObject({
-      name: "OdooAccessError",
-      code: "ODOO_ACCESS_DENIED",
-    });
-  });
-
-  it("maps odoo.exceptions.AccessDenied → AuthError (credential failure)", async () => {
-    const { fn } = makeFetch([
-      { json: { result: 1 } },
-      {
-        json: {
-          error: {
-            data: { name: "odoo.exceptions.AccessDenied", message: "Access Denied" },
-          },
-        },
-      },
-    ]);
-    const client = mkClient({}, fn);
-    await expect(client.searchRead("res.partner")).rejects.toMatchObject({
-      name: "AuthError",
-      code: "ODOO_AUTH_FAILED",
-    });
-  });
-
-  it("falls back to OdooServerError on unknown exception names", async () => {
-    const { fn } = makeFetch([
-      { json: { result: 1 } },
-      {
-        json: {
-          error: {
-            data: { name: "some.weird.exception", message: "boom" },
-          },
-        },
-      },
-    ]);
-    const client = mkClient({}, fn);
-    await expect(client.searchRead("res.partner")).rejects.toMatchObject({
-      name: "OdooServerError",
-      code: "ODOO_SERVER_ERROR",
-    });
-  });
-
-  it("translates non-2xx HTTP responses into TransportError", async () => {
-    const { fn } = makeFetch([
-      { ok: false, status: 502, statusText: "Bad Gateway", json: {} },
-    ]);
-    const client = mkClient({}, fn);
-    await expect(client.searchRead("res.partner")).rejects.toMatchObject({
-      name: "TransportError",
       code: "ODOO_TRANSPORT_FAILED",
+      message: expect.stringContaining("HTTP 502"),
     });
   });
 
-  it("translates fetch failures into TransportError", async () => {
+  it("translates fetch failures into ODOO_TRANSPORT_FAILED", async () => {
     const fn = vi.fn(async () => {
       throw new TypeError("network down");
     });
     const client = mkClient({}, fn);
     await expect(client.searchRead("res.partner")).rejects.toMatchObject({
-      name: "TransportError",
+      code: "ODOO_TRANSPORT_FAILED",
+      message: expect.stringContaining("network down"),
+    });
+  });
+
+  // Bug fixed: the old setTimeout was cleared once headers arrived, so a stalled body hung forever.
+  it("times out while reading a stalled response body", async () => {
+    const fn = vi.fn(async (url, init) => ({
+      ok: true,
+      status: 200,
+      json: () =>
+        new Promise((_, reject) =>
+          init.signal.addEventListener("abort", () => reject(init.signal.reason)),
+        ),
+    }));
+    const client = mkClient({ timeoutMs: 20 }, fn);
+    await expect(client.searchRead("res.partner")).rejects.toMatchObject({
+      code: "ODOO_TRANSPORT_FAILED",
+      message: expect.stringContaining("timed out after 20ms"),
     });
   });
 
@@ -314,25 +239,6 @@ describe("OdooClient", () => {
     expect(kwargs).toEqual({ attributes: ["type", "required"] });
   });
 
-  it("clearFieldsCache(model) drops only that model's entries", async () => {
-    const { fn, calls } = makeFetch([
-      { json: { result: 1 } },
-      { json: { result: { id: 1 } } }, // res.partner
-      { json: { result: { id: 1 } } }, // sale.order
-      { json: { result: { id: 1 } } }, // res.partner after clear
-    ]);
-    const client = mkClient({}, fn);
-    await client.fieldsGet("res.partner");
-    await client.fieldsGet("sale.order");
-    client.clearFieldsCache("res.partner");
-
-    await client.fieldsGet("res.partner"); // re-fetch
-    await client.fieldsGet("sale.order");  // cache hit, no new call
-
-    const execs = calls.filter((c) => c.body.params.method === "execute_kw");
-    expect(execs).toHaveLength(3);
-  });
-
   it("respects configured timeoutMs", async () => {
     const client = mkClient({ timeoutMs: 1234 });
     expect(client.timeoutMs).toBe(1234);
@@ -354,7 +260,8 @@ describe("OdooClient", () => {
     expect(kwargs).toEqual({ limit: 100 });
   });
 
-  it("nameSearch maps domain→args kwarg and returns tuple list", async () => {
+  // Bug fixed: Odoo 19 renamed name_search's `args` kwarg to `domain`; positional works on 18 and 19.
+  it("nameSearch sends name and domain positionally", async () => {
     const { fn, calls } = makeFetch([
       { json: { result: 1 } },
       { json: { result: [[10, "Acme"], [11, "Acme Logistics"]] } },
@@ -370,13 +277,8 @@ describe("OdooClient", () => {
     const [, , , model, method, args, kwargs] = calls[1].body.params.args;
     expect(model).toBe("res.partner");
     expect(method).toBe("name_search");
-    expect(args).toEqual([]);
-    expect(kwargs).toEqual({
-      name: "acme",
-      args: [["customer_rank", ">", 0]],
-      operator: "ilike",
-      limit: 5,
-    });
+    expect(args).toEqual(["acme", [["customer_rank", ">", 0]]]);
+    expect(kwargs).toEqual({ operator: "ilike", limit: 5 });
   });
 
   it("readGroup sends domain/aggregates/groupby as positional and the rest as kwargs", async () => {
