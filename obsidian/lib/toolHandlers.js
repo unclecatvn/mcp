@@ -129,7 +129,7 @@ export function registerTools(server, vaults) {
           .optional()
           .describe('Only notes with this tag ("project" also matches "project/alpha").'),
         frontmatter: z
-          .record(z.union([z.string(), z.number(), z.boolean()]))
+          .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
           .optional()
           .describe('Only notes whose properties equal these values, e.g. { "status": "active" }.'),
       },
@@ -241,7 +241,7 @@ export function registerTools(server, vaults) {
           .describe('Heading text, e.g. "Tasks" or "## Tasks". Must appear exactly once.'),
         content: z.string().max(vault.MAX_NOTE_BYTES).optional(),
         mode: z.enum(["append", "replace"]).default("append"),
-        frontmatter: z.record(z.any()).optional(),
+        frontmatter: z.record(z.string(), z.any()).optional(),
       },
       annotations: { destructiveHint: true },
     },
