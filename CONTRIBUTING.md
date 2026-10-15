@@ -75,7 +75,7 @@ Packages follow [semantic versioning](https://semver.org), so users can pin a ma
 
 If a PR changes shipped code but has no changeset, the release workflow adds a `patch` changeset from the commit subject, so Dependabot updates still get released. Breaking changes always need a hand-written `major` changeset.
 
-All packages are still `0.0.x`. `1.0.0` is planned together with the Odoo refactor, and from then on the table above applies strictly.
+Every package reached `1.0.0` together with the Odoo refactor, and the table above now applies strictly: anything listed under `major` waits for the next major version, and the READMEs pin installs to the current major (`@1`).
 
 ## Releasing manually (maintainer)
 

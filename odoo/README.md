@@ -36,7 +36,7 @@ claude mcp add odoo \
   -e ODOO_PROD_DB=production \
   -e ODOO_PROD_USERNAME=admin@example.com \
   -e ODOO_PROD_API_KEY=your-api-key \
-  -- npx -y @unclecat/mcp-odoo
+  -- npx -y @unclecat/mcp-odoo@1
 ```
 
 ### Claude Desktop, Cursor, Windsurf
@@ -48,7 +48,7 @@ Add the server to `claude_desktop_config.json`, `.cursor/mcp.json` or the projec
   "mcpServers": {
     "odoo": {
       "command": "npx",
-      "args": ["-y", "@unclecat/mcp-odoo"],
+      "args": ["-y", "@unclecat/mcp-odoo@1"],
       "env": {
         "ODOO_PROD_URL": "https://erp.example.com",
         "ODOO_PROD_DB": "production",

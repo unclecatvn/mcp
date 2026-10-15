@@ -34,10 +34,10 @@ The server works on the `.md` files in your vault folder. Obsidian notices chang
 claude mcp add obsidian -s user \
   -e OBSIDIAN_MAIN_PATH="/absolute/path/to/Vault" \
   -e OBSIDIAN_MAIN_MODE=readwrite \
-  -- npx -y @unclecat/mcp-obsidian@latest
+  -- npx -y @unclecat/mcp-obsidian@1
 ```
 
-`@latest` makes `npx` check for a new release every time the server starts.
+`@1` makes `npx` pick up every new 1.x release when the server starts, and never a breaking 2.0.
 
 ### Claude Desktop, Cursor, Windsurf
 
@@ -48,7 +48,7 @@ Add the server to `claude_desktop_config.json`, `.cursor/mcp.json` or the projec
   "mcpServers": {
     "obsidian": {
       "command": "npx",
-      "args": ["-y", "@unclecat/mcp-obsidian@latest"],
+      "args": ["-y", "@unclecat/mcp-obsidian@1"],
       "env": {
         "OBSIDIAN_MAIN_PATH": "/absolute/path/to/Vault",
         "OBSIDIAN_MAIN_MODE": "readwrite"
@@ -68,7 +68,7 @@ In `.vscode/mcp.json` (VS Code 1.102+), the top-level key is `servers`:
     "obsidian": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@unclecat/mcp-obsidian@latest"],
+      "args": ["-y", "@unclecat/mcp-obsidian@1"],
       "env": { "OBSIDIAN_MAIN_PATH": "/absolute/path/to/Vault" }
     }
   }

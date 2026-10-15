@@ -34,10 +34,10 @@ Server làm việc trên các file `.md` trong thư mục vault của bạn. Obs
 claude mcp add obsidian -s user \
   -e OBSIDIAN_MAIN_PATH="/absolute/path/to/Vault" \
   -e OBSIDIAN_MAIN_MODE=readwrite \
-  -- npx -y @unclecat/mcp-obsidian@latest
+  -- npx -y @unclecat/mcp-obsidian@1
 ```
 
-`@latest` khiến `npx` kiểm tra bản phát hành mới mỗi lần server khởi động.
+`@1` khiến `npx` tự lấy bản 1.x mới nhất mỗi lần server khởi động, và không bao giờ nhảy sang bản 2.0 có thay đổi không tương thích.
 
 ### Claude Desktop, Cursor, Windsurf
 
@@ -48,7 +48,7 @@ Thêm server vào `claude_desktop_config.json`, `.cursor/mcp.json` hoặc `.mcp.
   "mcpServers": {
     "obsidian": {
       "command": "npx",
-      "args": ["-y", "@unclecat/mcp-obsidian@latest"],
+      "args": ["-y", "@unclecat/mcp-obsidian@1"],
       "env": {
         "OBSIDIAN_MAIN_PATH": "/absolute/path/to/Vault",
         "OBSIDIAN_MAIN_MODE": "readwrite"
@@ -68,7 +68,7 @@ Trong `.vscode/mcp.json` (VS Code 1.102+), key cấp cao nhất là `servers`:
     "obsidian": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@unclecat/mcp-obsidian@latest"],
+      "args": ["-y", "@unclecat/mcp-obsidian@1"],
       "env": { "OBSIDIAN_MAIN_PATH": "/absolute/path/to/Vault" }
     }
   }
