@@ -79,7 +79,7 @@ Dòng `$schema` giúp bạn có autocomplete và validation trong VS Code và c�
 **Claude Code**
 
 ```bash
-claude mcp add multi-db -e MCP_DB_CONFIG=/absolute/path/to/mcp-db.config.json -- npx -y @unclecat/mcp-multi-db
+claude mcp add multi-db -e MCP_DB_CONFIG=/absolute/path/to/mcp-db.config.json -- npx -y @unclecat/mcp-multi-db@1
 ```
 
 **Claude Desktop, Cursor, Windsurf** (`claude_desktop_config.json`, `.cursor/mcp.json` hoặc `.mcp.json`)
@@ -89,7 +89,7 @@ claude mcp add multi-db -e MCP_DB_CONFIG=/absolute/path/to/mcp-db.config.json --
   "mcpServers": {
     "multi-db": {
       "command": "npx",
-      "args": ["-y", "@unclecat/mcp-multi-db"],
+      "args": ["-y", "@unclecat/mcp-multi-db@1"],
       "env": { "MCP_DB_CONFIG": "/absolute/path/to/mcp-db.config.json" }
     }
   }
@@ -104,7 +104,7 @@ claude mcp add multi-db -e MCP_DB_CONFIG=/absolute/path/to/mcp-db.config.json --
     "multi-db": {
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@unclecat/mcp-multi-db"],
+      "args": ["-y", "@unclecat/mcp-multi-db@1"],
       "env": { "MCP_DB_CONFIG": "${workspaceFolder}/mcp-db.config.json" }
     }
   }

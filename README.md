@@ -21,15 +21,15 @@ Each package has its own README with full configuration, a tool reference and tr
 Every server runs through `npx`, so there is nothing to install or build. With [Claude Code](https://docs.anthropic.com/en/docs/claude-code):
 
 ```bash
-claude mcp add odoo -e ODOO_PROD_URL=https://erp.example.com -e ODOO_PROD_DB=production -e ODOO_PROD_USERNAME=admin -e ODOO_PROD_API_KEY=your-api-key -- npx -y @unclecat/mcp-odoo
+claude mcp add odoo -e ODOO_PROD_URL=https://erp.example.com -e ODOO_PROD_DB=production -e ODOO_PROD_USERNAME=admin -e ODOO_PROD_API_KEY=your-api-key -- npx -y @unclecat/mcp-odoo@1
 ```
 
 ```bash
-claude mcp add obsidian -e OBSIDIAN_MAIN_PATH=/absolute/path/to/Vault -- npx -y @unclecat/mcp-obsidian
+claude mcp add obsidian -e OBSIDIAN_MAIN_PATH=/absolute/path/to/Vault -- npx -y @unclecat/mcp-obsidian@1
 ```
 
 ```bash
-claude mcp add multi-db -e MCP_DB_CONFIG=/absolute/path/to/mcp-db.config.json -- npx -y @unclecat/mcp-multi-db
+claude mcp add multi-db -e MCP_DB_CONFIG=/absolute/path/to/mcp-db.config.json -- npx -y @unclecat/mcp-multi-db@1
 ```
 
 For Claude Desktop, Cursor and VS Code, see the configuration section of each package README.
