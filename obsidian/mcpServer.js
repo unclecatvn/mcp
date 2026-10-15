@@ -13,7 +13,8 @@ const INSTRUCTIONS = `You are connected to one or more Obsidian vaults through t
 - Paths are vault-relative with forward slashes ("Projects/Plan.md"). ".md" is appended if missing.
 - Find a note by title with search_notes (pathMatch=true), then read_note.
 - Notes link with [[Note name]] (no folder, no .md); read_note returns them as "links".
-- Before overwriting a note, read it and keep everything you are not meant to change. Prefer mode "append" for adding to logs or daily notes.
+- To change part of a note (a section under a heading, or frontmatter properties) use patch_note instead of overwriting it. Before overwriting a note, read it and keep everything you are not meant to change.
+- Use daily_note to find or create today's daily note; it follows the vault's Daily notes settings.
 - delete_note moves the note to .trash/; tell the user it can be restored from there.`;
 
 function log(level, fields) {

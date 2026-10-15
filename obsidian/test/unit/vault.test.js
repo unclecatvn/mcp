@@ -11,6 +11,10 @@ import {
   searchNotes,
   writeNote,
   deleteNote,
+  getBacklinks,
+  patchNote,
+  dailyNote,
+  formatDate,
   MAX_NOTE_BYTES,
 } from "../../lib/vault.js";
 
@@ -66,16 +70,25 @@ afterEach(() => {
 describe("parseNote", () => {
   it("extracts frontmatter, links, embeds and tags, ignoring code", () => {
     const n = parseNote(PLAN);
-    expect(n.frontmatter).toBe("tags: [project]\nstatus: active");
+    expect(n.frontmatter).toEqual({ tags: ["project"], status: "active" });
     expect(n.links).toEqual(["Roadmap", "People/Alice", "Specs", "Finance/Budget 2026.md"]);
     expect(n.embeds).toEqual(["diagram.png"]);
-    expect(n.tags).toEqual(["project/alpha", "todo"]);
+    expect(n.tags).toEqual(["project", "project/alpha", "todo"]);
   });
 
-  it("handles empty and missing frontmatter", () => {
-    expect(parseNote("---\n---\nbody").frontmatter).toBe("");
+  it("handles empty, missing and invalid frontmatter", () => {
+    expect(parseNote("---\n---\nbody").frontmatter).toEqual({});
     expect(parseNote("no fm here").frontmatter).toBeNull();
     expect(parseNote("text\n---\nnot: fm\n---\n").frontmatter).toBeNull();
+    const bad = parseNote("---\na: 1\na: 2\n---\n#ok");
+    expect(bad.frontmatter).toBeNull();
+    expect(bad.frontmatterError).toMatch(/unique/);
+    expect(bad.tags).toEqual(["ok"]);
+    expect(parseNote("---\n- a\n---\n").frontmatterError).toMatch(/key\/value/);
+  });
+
+  it("merges string-form frontmatter tags", () => {
+    expect(parseNote("---\ntags: '#a, b c'\n---\n#d").tags).toEqual(["a", "b", "c", "d"]);
   });
 });
 
@@ -132,7 +145,8 @@ describe("readNote", () => {
     expect(n.path).toBe("Projects/Plan.md");
     expect(n.content).toBe(PLAN);
     expect(n.size).toBe(Buffer.byteLength(PLAN));
-    expect(n.tags).toEqual(["project/alpha", "todo"]);
+    expect(n.tags).toEqual(["project", "project/alpha", "todo"]);
+    expect(n.frontmatter.status).toBe("active");
     expect(n.modified).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
@@ -197,6 +211,71 @@ describe("searchNotes", () => {
     put("Big.md", "needle " + "x".repeat(MAX_NOTE_BYTES));
     expect((await searchNotes(root, { ...base, query: "needle" })).results).toEqual([]);
   });
+
+  it("filters by tag (including nested) and frontmatter values", async () => {
+    put("Other.md", "---\nstatus: [active, old]\npriority: 1\n---\n#Project/beta meeting");
+    const paths = async (args) =>
+      (await searchNotes(root, { ...base, ...args })).results.map((r) => r.path);
+    expect(await paths({ tag: "#project" })).toEqual(["Other.md", "Projects/Plan.md"]);
+    expect(await paths({ tag: "project/alpha" })).toEqual(["Projects/Plan.md"]);
+    expect(await paths({ frontmatter: { status: "active" } })).toEqual([
+      "Other.md",
+      "Projects/Plan.md",
+    ]);
+    expect(await paths({ frontmatter: { status: "active", priority: 1 } })).toEqual(["Other.md"]);
+    expect(await paths({ query: "meeting", tag: "project" })).toEqual(["Other.md"]);
+    expect(await paths({ query: "meeting", tag: "nope" })).toEqual([]);
+    const listed = await searchNotes(root, { ...base, tag: "todo" });
+    expect(listed.results).toEqual([{ path: "Projects/Plan.md", pathMatch: false, matches: [] }]);
+    await expect(searchNotes(root, base)).rejects.toThrow(/Pass query, tag or frontmatter/);
+  });
+});
+
+describe("getBacklinks", () => {
+  it("finds wikilinks, embeds, path and relative links with line numbers", async () => {
+    put(
+      "Daily/2026-10-16.md",
+      "---\nrel: x\n---\nreview [[plan#Scope|the plan]]\n```\n[[Plan]]\n```\n![[Projects/Plan.md]]\r\n`[[Plan]]`",
+    );
+    put(
+      "Projects/Notes.md",
+      "see [it](Plan.md) and [up](../Projects/Plan) and [x](/Projects/Plan)",
+    );
+    put("Archive/Plan.md", "same basename, no links");
+    put("Misc.md", "[[Other/Plan]] [[Planner]] [web](https://x.com/Plan.md)");
+
+    const r = await getBacklinks(root, { path: "Projects/Plan", limit: 100 });
+    expect(r).toEqual({
+      path: "Projects/Plan.md",
+      truncated: false,
+      backlinks: [
+        {
+          path: "Daily/2026-10-16.md",
+          matches: [
+            { line: 4, text: "review [[plan#Scope|the plan]]" },
+            { line: 8, text: "![[Projects/Plan.md]]" },
+          ],
+        },
+        { path: "Projects/Notes.md", matches: [{ line: 1, text: expect.stringMatching(/^see/) }] },
+      ],
+    });
+  });
+
+  it("stops at limit and works for notes that do not exist yet", async () => {
+    put("A.md", "[[Ghost]]");
+    put("B.md", "[[ghost]]");
+    const r = await getBacklinks(root, { path: "Ghost", limit: 1 });
+    expect(r.truncated).toBe(true);
+    expect(r.backlinks.map((b) => b.path)).toEqual(["A.md"]);
+  });
+
+  it("skips oversized notes and refuses escaping paths", async () => {
+    put("Big.md", "[[Inbox]] " + "x".repeat(MAX_NOTE_BYTES));
+    expect((await getBacklinks(root, { path: "Inbox", limit: 10 })).backlinks).toEqual([]);
+    await expect(getBacklinks(root, { path: "linkdir/secret", limit: 10 })).rejects.toThrow(
+      /outside the vault/,
+    );
+  });
 });
 
 describe("writeNote", () => {
@@ -251,6 +330,154 @@ describe("writeNote", () => {
     await expect(writeNote(root, { path: "Inbox", content: "x", mode: "nuke" })).rejects.toThrow(
       /Unknown mode/,
     );
+  });
+});
+
+describe("patchNote", () => {
+  const read = (rel) => fs.readFileSync(path.join(root, rel), "utf8");
+  const DOC = [
+    "---",
+    "status: active # keep",
+    "tags: [a]",
+    "---",
+    "# Title",
+    "intro",
+    "## Tasks",
+    "- one",
+    "### Sub",
+    "- sub",
+    "",
+    "## Notes",
+    "```sh",
+    "## not a heading",
+    "```",
+    "",
+  ].join("\n");
+
+  it("appends to and replaces a section, leaving the rest byte-identical", async () => {
+    put("Doc.md", DOC);
+    expect(await patchNote(root, { path: "Doc", heading: "Tasks", content: "- two\n" })).toEqual({
+      path: "Doc.md",
+      bytes: Buffer.byteLength(read("Doc.md")),
+    });
+    expect(read("Doc.md")).toBe(DOC.replace("- sub\n", "- sub\n- two\n"));
+
+    // "- two" landed at the end of Tasks, which is inside its ### Sub.
+    await patchNote(root, { path: "Doc", heading: "### Sub", content: "- new", mode: "replace" });
+    expect(read("Doc.md")).toBe(DOC.replace("- sub\n", "- new\n"));
+
+    await patchNote(root, { path: "Doc", heading: "Notes", content: "end" });
+    expect(read("Doc.md")).toBe(DOC.replace("- sub\n", "- new\n").replace(/```\n$/, "```\nend\n"));
+
+    await patchNote(root, { path: "Doc", heading: "Tasks", content: "", mode: "replace" });
+    expect(read("Doc.md")).toMatch(/## Tasks\n\n## Notes/);
+    expect(fs.readdirSync(root).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("keeps CRLF and a missing final newline", async () => {
+    put("Crlf.md", "# A\r\nold\r\n# B\r\nlast");
+    await patchNote(root, { path: "Crlf", heading: "B", content: "x\ny" });
+    expect(read("Crlf.md")).toBe("# A\r\nold\r\n# B\r\nlast\r\nx\r\ny");
+    await patchNote(root, { path: "Crlf", heading: "A", content: "new", mode: "replace" });
+    expect(read("Crlf.md")).toBe("# A\r\nnew\r\n# B\r\nlast\r\nx\r\ny");
+  });
+
+  it("sets and deletes frontmatter keys, keeping comments and the body", async () => {
+    put("Doc.md", DOC);
+    const body = DOC.slice(DOC.indexOf("# Title"));
+    await patchNote(root, { path: "Doc", frontmatter: { tags: null, due: "2026-11-01" } });
+    expect(read("Doc.md")).toBe("---\nstatus: active # keep\ndue: 2026-11-01\n---\n" + body);
+
+    await patchNote(root, { path: "Doc", frontmatter: { status: null, due: null } });
+    expect(read("Doc.md")).toBe(body);
+
+    await patchNote(root, { path: "Doc", frontmatter: { list: ["x"] } });
+    expect(read("Doc.md")).toBe("---\nlist:\n  - x\n---\n" + body);
+
+    put("Crlf.md", "---\r\na: 1\r\n---\r\nbody");
+    await patchNote(root, { path: "Crlf", frontmatter: { b: true } });
+    expect(read("Crlf.md")).toBe("---\r\na: 1\r\nb: true\r\n---\r\nbody");
+  });
+
+  it("reports bad input, unknown and duplicate headings, and broken YAML", async () => {
+    put("Doc.md", DOC);
+    put("Dup.md", "## X\n## X\n");
+    put("Bad.md", "---\na: [\n---\n");
+    put("List.md", "---\n- a\n---\n");
+    await expect(patchNote(root, { path: "Doc" })).rejects.toThrow(/Pass heading/);
+    await expect(patchNote(root, { path: "Doc", heading: "Tasks" })).rejects.toThrow(
+      /content is required/,
+    );
+    await expect(patchNote(root, { path: "Doc", heading: "Nope", content: "x" })).rejects.toThrow(
+      /not found\. Headings: Title, Tasks, Sub, Notes/,
+    );
+    await expect(patchNote(root, { path: "Dup", heading: "X", content: "x" })).rejects.toThrow(
+      /appears 2 times/,
+    );
+    await expect(patchNote(root, { path: "Inbox", heading: "X", content: "x" })).rejects.toThrow(
+      /Headings: \(none\)/,
+    );
+    await expect(patchNote(root, { path: "Bad", frontmatter: { a: 1 } })).rejects.toThrow(
+      /not valid YAML/,
+    );
+    await expect(patchNote(root, { path: "List", frontmatter: { a: 1 } })).rejects.toThrow(
+      /key\/value/,
+    );
+    await expect(patchNote(root, { path: "Nope", frontmatter: { a: 1 } })).rejects.toThrow(
+      /Note not found/,
+    );
+    expect(read("Doc.md")).toBe(DOC);
+  });
+});
+
+describe("dailyNote", () => {
+  it("formats common moment tokens and refuses the rest", () => {
+    const d = new Date(2026, 9, 5, 7, 3);
+    expect(formatDate(d, "YYYY-MM-DD")).toBe("2026-10-05");
+    expect(formatDate(d, "YY/M/D [Week] ddd dddd MMM MMMM HH:mm")).toBe(
+      "26/10/5 Week Mon Monday Oct October 07:03",
+    );
+    expect(() => formatDate(d, "Do MMMM")).toThrow(/Unsupported date token "o"/);
+    expect(() => formatDate(d, "constructor")).toThrow(/Unsupported/);
+  });
+
+  it("uses Obsidian's defaults when there are no settings", async () => {
+    expect(await dailyNote(root, { date: "2026-10-15" })).toMatchObject({
+      path: "2026-10-15.md",
+      exists: false,
+    });
+    const today = await dailyNote(root, { create: true });
+    expect(today.created).toBe(true);
+    expect(today.content).toBe("");
+    expect(today.path).toMatch(/^\d{4}-\d{2}-\d{2}\.md$/);
+  });
+
+  it("follows folder, format and template settings", async () => {
+    put(
+      ".obsidian/daily-notes.json",
+      JSON.stringify({ folder: "Daily", format: "YYYY/MM/YYYY-MM-DD", template: "Templates/Day" }),
+    );
+    put("Templates/Day.md", "# {{title}}\n{{date:dddd}} {{date}} {{time:HH}} {{other}}");
+    const r = await dailyNote(root, { date: "2026-10-15", create: true });
+    expect(r).toMatchObject({ path: "Daily/2026/10/2026-10-15.md", created: true });
+    expect(r.content).toMatch(/^# 2026-10-15\nThursday 2026-10-15 \d\d \{\{other\}\}$/);
+
+    put("Daily/2026/10/2026-10-15.md", "edited");
+    expect(await dailyNote(root, { date: "2026-10-15", create: true })).toMatchObject({
+      content: "edited",
+      created: false,
+    });
+  });
+
+  it("returns an existing note and rejects impossible dates", async () => {
+    put(".obsidian/daily-notes.json", JSON.stringify({ folder: "Daily", format: "" }));
+    expect(await dailyNote(root, { date: "2026-10-15" })).toMatchObject({
+      path: "Daily/2026-10-15.md",
+      created: false,
+      content: "Meeting with Alice\nnothing else",
+    });
+    await expect(dailyNote(root, { date: "2026-02-30" })).rejects.toThrow(/Invalid date/);
+    await expect(dailyNote(root, { date: "2026-13-01" })).rejects.toThrow(/Invalid date/);
   });
 });
 

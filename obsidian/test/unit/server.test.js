@@ -38,6 +38,8 @@ describe("ObsidianMCPServer", () => {
     const { client, call } = await connect({ OBSIDIAN_RO_PATH: path.join(dir, "ro") });
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
+      "daily_note",
+      "get_backlinks",
       "list_notes",
       "list_vaults",
       "read_note",
@@ -45,6 +47,7 @@ describe("ObsidianMCPServer", () => {
     ]);
     // Single vault: `vault` may be omitted.
     expect((await call("read_note", { path: "Hello" })).tags).toEqual(["greeting"]);
+    expect((await call("daily_note", { create: true })).error).toMatch(/readonly/);
     expect(client.getInstructions()).toMatch(/vault-relative/);
   });
 
@@ -54,7 +57,7 @@ describe("ObsidianMCPServer", () => {
       OBSIDIAN_RW_MODE: "readwrite",
       OBSIDIAN_RO_PATH: path.join(dir, "ro"),
     });
-    expect((await client.listTools()).tools).toHaveLength(6);
+    expect((await client.listTools()).tools).toHaveLength(9);
     expect((await call("list_vaults")).vaults).toEqual([
       { name: "rw", path: path.join(dir, "rw"), mode: "readwrite" },
       { name: "ro", path: path.join(dir, "ro"), mode: "readonly" },
@@ -68,6 +71,16 @@ describe("ObsidianMCPServer", () => {
     expect((await call("read_note", { vault: "rw", path: "A/Note.md" })).links).toEqual(["B"]);
     expect((await call("list_notes", { vault: "rw" })).notes).toEqual(["A/Note.md"]);
     expect((await call("search_notes", { vault: "rw", query: "[[b]]" })).results).toHaveLength(1);
+    expect(
+      await call("patch_note", { vault: "rw", path: "A/Note", frontmatter: { tags: ["t"] } }),
+    ).toMatchObject({ path: "A/Note.md" });
+    expect((await call("search_notes", { vault: "rw", tag: "t" })).results).toHaveLength(1);
+    expect((await call("get_backlinks", { vault: "rw", path: "B" })).backlinks).toEqual([
+      { path: "A/Note.md", matches: [{ line: 5, text: "x [[B]]" }] },
+    ]);
+    const daily = await call("daily_note", { vault: "rw", date: "2026-10-15", create: true });
+    expect(daily).toMatchObject({ path: "2026-10-15.md", created: true });
+    expect((await call("daily_note", { vault: "rw", date: "15/10/2026" })).error).toMatch(/date/);
     expect((await call("delete_note", { vault: "rw", path: "A/Note" })).trashedTo).toBe(
       ".trash/A/Note.md",
     );

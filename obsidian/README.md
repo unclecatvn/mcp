@@ -45,9 +45,12 @@ With a single vault, the `vault` argument can be omitted from every tool.
 |---|---|
 | `list_vaults` | Configured vaults with their path and mode. |
 | `list_notes` | Note paths in a vault or folder, sorted. |
-| `read_note` | Content plus raw frontmatter, links, embeds and inline tags. |
-| `search_notes` | Plain-text or regex search over contents and paths. |
+| `read_note` | Content plus parsed frontmatter, links, embeds and tags (frontmatter `tags` + inline `#tags`). |
+| `search_notes` | Plain-text or regex search over contents and paths, optionally filtered by `tag` (nested tags included) and `frontmatter` values. |
+| `get_backlinks` | Notes that link to or embed a note, with line numbers. `[[Name]]` matches by file name, `[[Folder/Name]]` and `.md` links by path. |
+| `daily_note` | The daily note for a date (default today), using `.obsidian/daily-notes.json` (folder, `YYYY`/`MM`/`DD`/`ddd`… format, template). `create: true` makes it from the template; needs a `readwrite` vault. |
 | `write_note` | `create` (default), `overwrite` (atomic) or `append`. Only listed when a vault is `readwrite`. |
+| `patch_note` | Append to or replace the section under a heading, and set/delete frontmatter properties (`null` deletes). The rest of the note stays byte-identical. Only listed when a vault is `readwrite`. |
 | `delete_note` | Moves the note to `<vault>/.trash/`. Only listed when a vault is `readwrite`. |
 
 ## Safety
