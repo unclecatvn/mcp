@@ -1,6 +1,6 @@
 {
   "name": "@unclecat/mcp-odoo",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "MCP server for Odoo v18+ via JSON-RPC. Multi-instance support, API key or password auth, generic CRUD tools that let Claude compose workflows on any Odoo model.",
   "main": "index.js",
   "types": "index.d.ts",

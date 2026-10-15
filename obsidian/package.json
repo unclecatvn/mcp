@@ -1,6 +1,6 @@
 {
   "name": "@unclecat/mcp-obsidian",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "MCP server for Obsidian vaults via the filesystem. Works without Obsidian running, supports multiple vaults with per-vault readonly/readwrite mode.",
   "main": "index.js",
   "type": "module",

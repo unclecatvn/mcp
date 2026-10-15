@@ -1,5 +1,11 @@
 # @unclecat/mcp-multi-db
 
+## 0.0.7
+
+### Patch Changes
+
+- 51f748f: fix(deps): bump `@modelcontextprotocol/sdk` to ^1.31.0 (GHSA-6qxp-vccf-f47h) and patch vulnerable transitive dependencies (hono, proxy-addr, fast-uri, ip-address) via pnpm overrides.
+
 ## 0.0.6
 
 ### Patch Changes
