@@ -1,9 +1,21 @@
 version: 2
 updates:
   - package-ecosystem: "npm"
-    directory: "/"
+    # Every workspace package, so obsidian/db/odoo dependencies get bumped too.
+    directories:
+      - "/"
+      - "/db"
+      - "/obsidian"
+      - "/odoo"
     schedule:
       interval: "weekly"
+    # Same supply-chain rule as the lockfile: only releases at least 14 days old.
+    cooldown:
+      default-days: 14
+    # One PR per week for all minor/patch bumps; majors still come one by one.
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
