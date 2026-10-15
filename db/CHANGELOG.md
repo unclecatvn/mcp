@@ -1,5 +1,11 @@
 # @unclecat/mcp-multi-db
 
+## 1.0.0
+
+### Major Changes
+
+- [#33](https://github.com/unclecatvn/mcp/pull/33) [`a1c7781`](https://github.com/unclecatvn/mcp/commit/a1c778105778af223e856d58ffac104700bb54c1) Thanks [@unclecatvn](https://github.com/unclecatvn)! - 1.0.0 marks the stable API. Nothing changes for you since 0.0.8: same tools, arguments, config file and env vars. From now on releases follow [semver](https://github.com/unclecatvn/mcp/blob/master/CONTRIBUTING.md#versioning) strictly, so a removed or renamed tool, argument, error code or env var, or a changed default, only ships in a new major. Install with `npx -y @unclecat/mcp-multi-db@1` to get every 1.x fix and feature without breaking changes.
+
 ## 0.0.8
 
 ### Patch Changes
