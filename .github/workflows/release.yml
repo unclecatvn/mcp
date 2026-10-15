@@ -78,9 +78,11 @@ jobs:
 
           # Detect changed workspace packages between this commit and its first parent
           # Package dirs come from pnpm-workspace.yaml (root excluded), so new packages are picked up automatically
+          # Docs and tests alone never trigger a release: users only get a new version when shipped code or deps change
           base=$(git rev-parse HEAD^1)
           pkgs=$(pnpm -r exec pwd | xargs -n1 basename)
           changed_dirs=$(git diff --name-only "$base" HEAD \
+            | grep -Ev '\.md$|/test/|/vitest\.config\.js$|/\.prettierignore$' \
             | cut -d/ -f1 \
             | grep -Fx "$pkgs" \
             | sort -u || true)
