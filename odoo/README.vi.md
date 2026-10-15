@@ -21,7 +21,7 @@ Server mở ORM của Odoo thông qua mười tool tổng quát, nên hoạt đ�
   - lối thoát `call_method` cho các business action như xác nhận đơn hàng, ghi sổ hóa đơn hoặc chạy wizard.
 - **Nhiều instance.** Cấu hình bao nhiêu instance tùy ý, mỗi instance có thông tin đăng nhập và timeout riêng.
 - **Xác thực bằng API key** (khuyến nghị) hoặc mật khẩu, chọn riêng cho từng instance.
-- **Cheatsheet Odoo tích hợp sẵn.** Khi `initialize`, model nhận được ghi chú về cú pháp domain, command tuple của x2many, định dạng field và mã lỗi, nên dựng được lời gọi đúng mà không cần thử sai.
+- **Cheatsheet Odoo tích hợp sẵn.** Khi `initialize`, model nhận một ghi chú ngắn về workflow, command tuple của x2many, định dạng field và mã lỗi. Ghi chú này giữ dưới ~2 KB, ngưỡng mà các host như Claude Code cắt bớt; cú pháp domain và ví dụ business action nằm trong description của từng tool.
 - **Mã lỗi ổn định.** Các exception của Odoo được ánh xạ sang các mã như `ODOO_ACCESS_DENIED` và `ODOO_USER_ERROR`, để model biết nên sửa lời gọi, retry hay dừng lại.
 
 ## Bắt đầu nhanh
@@ -106,7 +106,7 @@ Mọi tool trừ `list_connections` đều nhận đối số `connection`.
 |---|---|---|
 | `list_connections` | Xem các instance đã cấu hình, một lần cho mỗi phiên | `{ connections: [{ name, url, db, username, authType, ... }] }` |
 | `fields_get` | Xem các field của một model trước khi ghi. Kết quả được cache. | `{ model, fields: { name: { type, required, relation, ... } } }` |
-| `search_read` | Truy vấn bản ghi với domain, field, limit và order | `{ model, count, records: [...] }` |
+| `search_read` | Truy vấn bản ghi với domain, field, limit và order. `limit` mặc định 100; `limit_reached: true` nghĩa là có thể còn nữa. | `{ model, count, limit_reached?, records: [...] }` |
 | `search_count` | Đếm bản ghi mà không cần lấy dữ liệu về | `{ model, count }` |
 | `name_search` | Tra cứu mờ theo tên hiển thị | `{ model, results: [[id, "name"], ...] }` |
 | `read_group` | Nhóm theo field và tổng hợp, cho báo cáo và KPI | `{ model, count, groups: [...] }` |
@@ -128,7 +128,6 @@ Lỗi được trả về dưới dạng `[CODE] message` bên trong một kết
 
 | Mã | Ý nghĩa | Model nên làm gì |
 |---|---|---|
-| `ODOO_INPUT_INVALID` | Đối số không qua được bước kiểm tra schema | Sửa lời gọi |
 | `ODOO_UNKNOWN_CONNECTION` | `connection` không xác định | Gọi lại `list_connections` |
 | `ODOO_AUTH_FAILED` | Sai thông tin đăng nhập, hoặc đăng nhập bằng mật khẩu với user bật 2FA | Dừng lại và hỏi người vận hành |
 | `ODOO_ACCESS_DENIED` | User không có quyền trên model hoặc bản ghi | Không retry |
@@ -138,9 +137,12 @@ Lỗi được trả về dưới dạng `[CODE] message` bên trong một kết
 | `ODOO_SERVER_ERROR` | Exception không mong đợi từ Odoo | Coi là lỗi nghiêm trọng đối với lời gọi này |
 | `ODOO_TRANSPORT_FAILED` | Lỗi mạng, HTTP hoặc timeout | Có thể retry một lần |
 
+Đối số sai schema, kể cả key không tồn tại, trả về chuỗi `Input validation error: ...` của SDK thay vì một mã lỗi.
+
 ## Bảo mật
 
 - **Đặc quyền tối thiểu.** Model có thể làm mọi việc mà user Odoo đã cấu hình làm được. Hãy kết nối bằng một user riêng có quyền truy cập khớp với phạm vi bạn muốn trợ lý được đụng tới.
+- **Tool annotations.** Tool đọc gắn `readOnlyHint`; `write`, `unlink` và `call_method` gắn `destructiveHint`, để host tự duyệt thao tác đọc và hỏi lại trước khi ghi.
 - **Ưu tiên API key.** Bạn có thể thu hồi API key mà không phải đổi mật khẩu của user.
 - **HTTP thuần.** URL `http://` được chấp nhận nhưng sẽ kích hoạt một cảnh báo khi khởi động, vì thông tin đăng nhập sẽ đi qua mạng dưới dạng văn bản thuần.
 - **Không rò rỉ secret.** `list_connections` chỉ báo *loại* xác thực, không bao giờ báo key hay mật khẩu.

@@ -23,43 +23,41 @@ Plain JavaScript (ESM). No build step — `bin/mcp-odoo` shells straight to `ind
 
 ### Entry-point flow
 
-`index.js` → `OdooMCPServer` (`mcpServer.js`) → `ClientRegistry` → `OdooClient`
+`index.js` → `OdooMCPServer` (`mcpServer.js`) → `registerTools(McpServer, Map<name, OdooClient>)`
 
 ### Modules
 
-| File                       | Responsibility                                                                     |
-| -------------------------- | ---------------------------------------------------------------------------------- |
-| `index.js`                 | Shebang + spawns `OdooMCPServer.run()`                                              |
-| `mcpServer.js`             | MCP wiring: parses env, registers tool handlers, sets `serverInfo.instructions`     |
-| `lib/config.js`            | `parseEnv()` — discovers `ODOO_<NAME>_*` blocks; never throws on per-connection error |
-| `lib/errors.js`            | `McpOdooError` subclasses + `formatErrorForMcp()` for stable tool error envelopes   |
-| `lib/validators.js`        | zod schemas for every tool's input; `parseOrThrow` turns failures into `ValidationError` |
-| `lib/client.js`            | `OdooClient` — JSON-RPC fetch wrapper, lazy `authenticate()` with in-flight dedup    |
-| `lib/clientRegistry.js`    | One `OdooClient` per configured connection; resolves by name                        |
-| `lib/toolHandlers.js`      | `ToolHandlers.toolDescriptors()` + `.dispatch(name, args)` for 7 tools              |
-| `lib/instructions.js`      | The Odoo cheatsheet sent on `initialize`                                            |
+| File                  | Responsibility                                                                         |
+| --------------------- | -------------------------------------------------------------------------------------- |
+| `index.js`            | Shebang + runs `OdooMCPServer.run()`                                                   |
+| `mcpServer.js`        | Parses env, logs to stderr, builds one `OdooClient` per connection, creates `McpServer` |
+| `lib/config.js`       | `parseEnv()` — discovers `ODOO_<NAME>_*` blocks; never throws on per-connection error  |
+| `lib/errors.js`       | `OdooError(code, message)` (message pre-prefixed `[CODE]`) + `fromOdooError()`         |
+| `lib/client.js`       | `OdooClient` — JSON-RPC fetch wrapper, lazy `authenticate()` with in-flight dedup      |
+| `lib/toolHandlers.js` | `registerTools()` — the 10 tools, their zod input schemas and annotations              |
+| `lib/instructions.js` | The cheatsheet sent on `initialize` (keep under 2 KB — hosts truncate it)              |
 
 ### Tools registered
 
-`list_connections`, `fields_get`, `search_read`, `create`, `write`, `unlink`, `call_method`.
+Read (`readOnlyHint`): `list_connections`, `fields_get`, `search_read`, `search_count`, `name_search`, `read_group`.
+Write: `create`, `write`, `unlink`, `call_method` (the last three `destructiveHint`).
 
 ### Connection configuration
 
-`ODOO_<NAME>_<FIELD>` env vars, discovered by the `_URL` anchor. Fields: `URL`, `DB`, `USERNAME`, plus exactly one of `API_KEY` / `PASSWORD`. Bad entries are logged and skipped — server keeps running.
+`ODOO_<NAME>_<FIELD>` env vars, discovered by the `_URL` anchor. Fields: `URL`, `DB`, `USERNAME`, plus exactly one of `API_KEY` / `PASSWORD`, optional `TIMEOUT_MS`. Bad entries are logged and skipped — server keeps running.
 
 ### Important conventions to preserve
 
-- **MCP stdio**: never `console.log` — that corrupts the protocol stream. Logging goes to **stderr** via the structured logger in `mcpServer.js`.
-- **Errors**: tool failures must come back through `formatErrorForMcp()` so the host sees `{ isError: true, content: [{ type: "text", text: "[CODE] message" }] }`.
-- **Validation**: every tool handler validates with `parseOrThrow(schema, args, toolName)` before touching the registry.
+- **MCP stdio**: never `console.log` — that corrupts the protocol stream. Logging goes to **stderr** via `this.log` in `mcpServer.js`.
+- **Errors**: throw `OdooError`; the SDK turns any thrown error into `{ isError: true, content: [{ type: "text", text: err.message }] }`, and the message already starts with `[CODE]`.
+- **Validation**: input schemas are `z.object({...}).strict()` so unknown keys are rejected, not silently dropped. Odoo validates model/method names itself — don't add regexes that cost schema tokens on every tool.
+- **Odoo 18 vs 19 signatures**: pass parameters whose names differ between versions positionally (e.g. `name_search`'s 2nd param is `args` in 18, `domain` in 19).
 - **Secrets**: `list_connections` exposes `authType` but never `secret`. `OdooClient.describe()` is the single source of truth for that contract — keep it lean.
 - **Auth lazy + deduped**: don't call `_rpc("common","authenticate",...)` directly from handlers; always go through `client.callKw()` which guarantees one in-flight authenticate even under concurrent first calls.
 
 ### Adding a new tool
 
-1. Add input schema to `lib/validators.js`.
-2. Add a `case` and an `async _xxx(args)` method to `lib/toolHandlers.js`.
-3. Add a descriptor to `toolDescriptors()` with a description that includes an example.
-4. Add a test to `test/unit/toolHandlers.test.js`.
+1. Add a `server.registerTool(...)` call in `lib/toolHandlers.js` with a strict zod schema, `annotations`, and a short description with one EXAMPLE.
+2. Add a test to `test/unit/server.test.js` (stub client via `registerTools`).
 
 If the tool needs new behaviour on `OdooClient`, add a method there and unit-test it in `test/unit/client.test.js` with a stubbed `fetchImpl`.

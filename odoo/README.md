@@ -21,7 +21,7 @@ The server exposes Odoo's ORM through ten generic tools, so it works with every 
   - a `call_method` escape hatch for business actions such as confirming orders, posting invoices or running wizards.
 - **Several instances.** Configure any number of instances, each with its own credentials and timeout.
 - **API-key auth** (recommended) or a password, chosen per instance.
-- **Built-in Odoo cheatsheet.** On `initialize` the model receives notes on domain syntax, x2many command tuples, field formats and error codes, so it builds correct calls without trial and error.
+- **Built-in Odoo cheatsheet.** On `initialize` the model receives a short note on the workflow, x2many command tuples, field formats and error codes. It stays under the ~2 KB that hosts such as Claude Code truncate at; domain syntax and business-action examples live in each tool's description.
 - **Stable error codes.** Odoo exceptions are mapped to codes such as `ODOO_ACCESS_DENIED` and `ODOO_USER_ERROR`, so the model knows whether to fix the call, retry or stop.
 
 ## Quick start
@@ -106,7 +106,7 @@ Every tool except `list_connections` takes a `connection` argument.
 |---|---|---|
 | `list_connections` | Discover the configured instances, once per session | `{ connections: [{ name, url, db, username, authType, ... }] }` |
 | `fields_get` | Inspect a model's fields before writing. Results are cached. | `{ model, fields: { name: { type, required, relation, ... } } }` |
-| `search_read` | Query records with a domain, fields, limit and order | `{ model, count, records: [...] }` |
+| `search_read` | Query records with a domain, fields, limit and order. `limit` defaults to 100; `limit_reached: true` means there may be more. | `{ model, count, limit_reached?, records: [...] }` |
 | `search_count` | Count records without fetching them | `{ model, count }` |
 | `name_search` | Fuzzy lookup by display name | `{ model, results: [[id, "name"], ...] }` |
 | `read_group` | Group by fields and aggregate, for reports and KPIs | `{ model, count, groups: [...] }` |
@@ -128,7 +128,6 @@ Errors are returned as `[CODE] message` inside an MCP `isError` result.
 
 | Code | Meaning | What the model should do |
 |---|---|---|
-| `ODOO_INPUT_INVALID` | Arguments failed schema validation | Fix the call |
 | `ODOO_UNKNOWN_CONNECTION` | Unknown `connection` | Call `list_connections` again |
 | `ODOO_AUTH_FAILED` | Bad credentials, or a password login for a 2FA user | Stop and ask the operator |
 | `ODOO_ACCESS_DENIED` | The user lacks rights on the model or record | Do not retry |
@@ -138,9 +137,12 @@ Errors are returned as `[CODE] message` inside an MCP `isError` result.
 | `ODOO_SERVER_ERROR` | Unexpected Odoo exception | Treat as fatal for this call |
 | `ODOO_TRANSPORT_FAILED` | Network, HTTP or timeout error | Safe to retry once |
 
+Arguments that fail the tool schema, including unknown keys, come back as the SDK's `Input validation error: ...` text instead of a code.
+
 ## Security
 
 - **Least privilege.** The model can do anything the configured Odoo user can do. Connect it as a dedicated user whose access rights match what you want the assistant to touch.
+- **Tool annotations.** Read tools carry `readOnlyHint`; `write`, `unlink` and `call_method` carry `destructiveHint`, so hosts can auto-approve reads and ask before writes.
 - **Prefer API keys.** You can revoke an API key without changing the user's password.
 - **Plain HTTP.** `http://` URLs are accepted but trigger a startup warning, because credentials would travel in clear text.
 - **No secret leaks.** `list_connections` reports the auth *type*, never the key or password.
