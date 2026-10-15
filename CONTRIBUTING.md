@@ -16,10 +16,16 @@ Node ≥ 20 required.
 
 This is a pnpm monorepo. Each MCP server is its own package directory at the repo root and is published independently to npm.
 
-- [`db/`](./db) — `@unclecat/mcp-multi-db`
-- [`odoo/`](./odoo) — `@unclecat/mcp-odoo`
+- [`db/`](./db): `@unclecat/mcp-multi-db`
+- [`obsidian/`](./obsidian): `@unclecat/mcp-obsidian`
+- [`odoo/`](./odoo): `@unclecat/mcp-odoo`
 
-To add a new MCP package see [`docs/ADDING_A_NEW_MCP.md`](./docs/ADDING_A_NEW_MCP.md).
+### Adding a new package
+
+1. Create `<dir>/` with `package.json` (scoped `@unclecat/mcp-<name>`, `"publishConfig": { "access": "public" }`, `lint` / `format` / `test` / `test:coverage` scripts), `README.md`, `README.vi.md` and `LICENSE`.
+2. Add `<dir>` to `pnpm-workspace.yaml` and to the npm `directories` list in `.github/dependabot.yml`. CI and the release workflow pick packages up from the workspace file.
+3. Add a changeset. The first version of a new package has to be published manually once (`npm publish --access public`), because npm Trusted Publishing can only be configured for a package that already exists.
+4. On npmjs.com, open the package's **Settings → Trusted publishing** and add GitHub Actions with `unclecatvn` / `mcp` / `release.yml`, ticking `npm publish`.
 
 ## Branches
 
@@ -74,7 +80,7 @@ git push --follow-tags
 
 - **Branch protection on `master`:** require PR + ≥ 1 approval, require status check **`ci-success`** to pass, no force push.
 - **Allow GitHub Actions to create PRs:** Settings → Actions → General → Workflow permissions.
-- **Secrets:** `NPM_TOKEN` (granular access token for `@unclecat/*`, type "automation").
+- **npm Trusted Publishing:** every package on npmjs.com trusts `unclecatvn/mcp` and the workflow `release.yml`. There is no `NPM_TOKEN` secret, because publishing authenticates through OIDC and attaches provenance.
 
 ## Tests
 

@@ -1,44 +1,50 @@
 # @unclecat/mcp-multi-db
 
-> MCP server cho MySQL/MariaDB, PostgreSQL và SQL Server — parameterized queries, mode an toàn theo alias, timeout, row caps.
+> MCP server cho MySQL, MariaDB, PostgreSQL và SQL Server. Server chỉ chạy query có tham số (parameterized), áp dụng một safety mode cho từng database, và giới hạn số dòng trả về cũng như thời gian chạy query.
 
-📖 English: [README.md](./README.md) · 🛡️ [Security policy](../SECURITY.md)
+[![npm](https://img.shields.io/npm/v/@unclecat/mcp-multi-db.svg)](https://www.npmjs.com/package/@unclecat/mcp-multi-db)
+[![CI](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/unclecatvn/mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D20-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+
+[English](./README.md) · **Tiếng Việt** · [Chính sách bảo mật](../SECURITY.md)
+
+Một server cấp cho trợ lý AI quyền truy cập SQL có kiểm soát tới bao nhiêu database tùy bạn cấu hình, và mỗi database (một *alias*) có engine, thông tin đăng nhập, giới hạn và mức quyền riêng. Mọi alias đều chỉ đọc cho đến khi bạn cho phép thêm.
+
+- [Tính năng](#tính-năng)
+- [Bắt đầu nhanh](#bắt-đầu-nhanh)
+- [Cấu hình](#cấu-hình)
+- [Mô hình bảo mật](#mô-hình-bảo-mật)
+- [Tool và resource](#tool-và-resource)
+- [Xử lý sự cố](#xử-lý-sự-cố)
+- [Phát triển](#phát-triển)
 
 ## Tính năng
 
-- **Chỉ truy vấn parameterized** — loại bỏ SQL injection ở tầng API.
-- **Mode theo alias** — `readonly` (mặc định), `readwrite`, `readwrite+ddl`.
-- **Đa CSDL** — MySQL, MariaDB, PostgreSQL, SQL Server cùng một server.
-- **Tool description có metadata** — `description` + `tablesHint` của từng alias được nhúng vào MCP tool schema để AI chọn đúng DB, không phải đoán.
-- Query timeout, row cap + phát hiện overflow, SSL/TLS (`disable`/`prefer`/`require`/`verify`), connection pooling, retry exponential backoff, logging có cấu trúc.
+- **Chỉ chạy query có tham số.** SQL injection bị chặn ngay ở tầng API. Các placeholder `?` và `:named` được chuyển sang dạng native của từng dialect.
+- **Một safety mode cho mỗi alias:**
+  - `readonly` (mặc định);
+  - `readwrite`;
+  - `readwrite+ddl`.
 
-## Cài đặt
+  Query nhiều câu lệnh được kiểm tra theo mode nghiêm ngặt nhất mà bất kỳ câu lệnh nào trong đó yêu cầu.
+- **Bốn engine chạy song song:** MySQL, MariaDB, PostgreSQL và SQL Server.
+- **Định tuyến model tới đúng database.** `description`, `tablesHint` và `defaultSchema` của mỗi alias được ghi vào phần mô tả tool, nhờ đó model biết database nào chứa dữ liệu gì.
+- **Cơ chế bảo vệ cho production:**
+  - timeout cho query;
+  - giới hạn số dòng, và báo khi kết quả bị cắt bớt;
+  - SSL/TLS (`disable` / `prefer` / `require` / `verify`);
+  - connection pooling;
+  - retry với exponential backoff;
+  - log có cấu trúc trên stderr.
 
-```bash
-npx @unclecat/mcp-multi-db
-```
+## Bắt đầu nhanh
 
-Yêu cầu **Node ≥ 20**.
+Yêu cầu **Node.js 20+**. Không cần cài đặt gì; `npx` sẽ tải package.
 
----
+### 1. Mô tả các database của bạn
 
-## Quick start (khuyến nghị: JSON config)
-
-Trỏ server vào 1 file JSON qua `MCP_DB_CONFIG` (dùng **đường dẫn tuyệt đối** — cwd của MCP process do client quyết định):
-
-```json
-{
-  "mcpServers": {
-    "multi-db": {
-      "command": "npx",
-      "args": ["-y", "@unclecat/mcp-multi-db"],
-      "env": { "MCP_DB_CONFIG": "/duong/dan/tuyet/doi/mcp-db.config.json" }
-    }
-  }
-}
-```
-
-`mcp-db.config.json`:
+Tạo file `mcp-db.config.json`. Bạn có thể bắt đầu từ [`mcp-db.config.example.json`](./mcp-db.config.example.json):
 
 ```jsonc
 {
@@ -47,35 +53,50 @@ Trỏ server vào 1 file JSON qua `MCP_DB_CONFIG` (dùng **đường dẫn tuy�
   "aliases": {
     "prod": {
       "type": "postgresql",
-      "url": "postgresql://ro:pw@host:5432/main",
+      "url": "postgresql://readonly:secret@db.example.com:5432/main",
       "mode": "readonly",
       "displayName": "Production",
-      "description": "Bản replica chỉ-đọc của production. Đơn hàng, khách hàng, sản phẩm.",
-      "tablesHint": ["orders", "customers", "products"]
+      "description": "Read-only mirror of production: orders, customers, products.",
+      "tablesHint": ["orders", "customers", "products"],
+      "defaultSchema": "public"
     },
     "staging": {
       "type": "mysql",
-      "host": "stg.example.com", "user": "app", "password": "pw", "database": "appdb",
+      "host": "stg.example.com",
+      "user": "app",
+      "password": "secret",
+      "database": "appdb",
       "mode": "readwrite"
     }
   }
 }
 ```
 
-Log khi start:
+Dòng `$schema` giúp bạn có autocomplete và validation trong VS Code và các IDE của JetBrains.
 
+### 2. Đăng ký server
+
+**Claude Code**
+
+```bash
+claude mcp add multi-db -e MCP_DB_CONFIG=/absolute/path/to/mcp-db.config.json -- npx -y @unclecat/mcp-multi-db
 ```
-[info] event="loaded_aliases" source="config_file" count=2 \
-       aliases="prod(postgresql,readonly), staging(mysql,readwrite)" defaultAlias="prod"
+
+**Claude Desktop, Cursor, Windsurf** (`claude_desktop_config.json`, `.cursor/mcp.json` hoặc `.mcp.json`)
+
+```json
+{
+  "mcpServers": {
+    "multi-db": {
+      "command": "npx",
+      "args": ["-y", "@unclecat/mcp-multi-db"],
+      "env": { "MCP_DB_CONFIG": "/absolute/path/to/mcp-db.config.json" }
+    }
+  }
+}
 ```
 
-> **Tại sao JSON tốt hơn env vars?** 1 block/alias thay vì `DB_<ALIAS>_*` × 6+ biến, và gắn được `displayName`/`description`/`tablesHint` — những thứ này đi vào tool description của AI để nó route đúng alias.
-
-Copy [`mcp-db.config.example.json`](./mcp-db.config.example.json) để bắt đầu.
-
-### VS Code
-
-VS Code (1.102+) hỗ trợ MCP native. Khai báo server trong file workspace `.vscode/mcp.json` (lưu ý key top-level là `servers`, không phải `mcpServers`):
+**VS Code 1.102+** (`.vscode/mcp.json`; key cấp cao nhất là `servers`)
 
 ```json
 {
@@ -90,62 +111,57 @@ VS Code (1.102+) hỗ trợ MCP native. Khai báo server trong file workspace `.
 }
 ```
 
-`${workspaceFolder}` tự resolve thành đường dẫn tuyệt đối, nên anh có thể để `mcp-db.config.json` ngay ở root repo — không cần hardcode path theo máy.
+Hãy dùng **đường dẫn tuyệt đối** cho `MCP_DB_CONFIG`, vì host quyết định thư mục làm việc của server. Trong VS Code, `${workspaceFolder}` sẽ được mở rộng thành một đường dẫn tuyệt đối.
 
----
+Khi khởi động, server ghi log những gì nó đã nạp:
 
-## Tham chiếu cấu hình
+```
+[info] event="loaded_aliases" source="config_file" count=2 aliases="prod(postgresql,readonly), staging(mysql,readwrite)" defaultAlias="prod"
+```
 
-### Bắt buộc cho mỗi alias
+## Cấu hình
 
-| Field | Ý nghĩa |
+### Kết nối (theo từng alias)
+
+| Trường | Bắt buộc | Mô tả |
+|---|---|---|
+| `type` | có | `postgresql`, `mysql`, `mariadb` hoặc `sqlserver` |
+| `url` | một trong `url` / `host` | URL kết nối |
+| `host`, `port`, `user`, `password`, `database` | một trong `url` / `host` | Các trường khai báo tường minh. Chúng ghi đè các phần tương ứng của `url` khi cả hai cùng được đặt. |
+
+### Giới hạn và transport (theo từng alias, tất cả đều tùy chọn)
+
+| Trường | Mặc định | Giới hạn cứng | Mô tả |
+|---|---|---|---|
+| `mode` | `readonly` | — | `readonly`, `readwrite` hoặc `readwrite+ddl` |
+| `ssl` | `prefer` | — | `disable`, `prefer`, `require` hoặc `verify` |
+| `caCert` | — | — | Chứng chỉ CA tùy chỉnh cho TLS |
+| `timeoutMs` | `30000` | `600000` | Timeout của query |
+| `maxRows` | `10000` | `1000000` | Giới hạn số dòng cho các câu `SELECT` không có giới hạn |
+| `poolMax` | `5` | `100` | Kích thước connection pool |
+
+### Metadata định tuyến (theo từng alias, chỉ trong JSON config)
+
+| Trường | Tác dụng |
 |---|---|
-| `type` | `postgresql` \| `mysql` \| `mariadb` \| `sqlserver` |
-| `url` **hoặc** `host` | Connection URL, HOẶC `host` (+ `port`, `user`, `password`, `database` theo nhu cầu driver) |
+| `displayName` | Nhãn ngắn hiển thị cạnh alias trong phần mô tả tool. |
+| `description` | Một dòng mô tả database chứa gì. Model dùng nó để chọn alias. |
+| `tablesHint` | Các tên bảng có khả năng cao, làm điểm khởi đầu cho model. |
+| `defaultSchema` | Được `db_list_tables` và `db_describe_table` dùng khi không truyền `schema`, ví dụ `public`. |
 
-Set cả 2 → explicit fields override URL components.
+### Cấp cao nhất
 
-### Tuỳ chọn (default an toàn)
-
-| Field | Mặc định | Hard cap |
-|---|---|---|
-| `mode` | `readonly` | — |
-| `ssl` | `prefer` | — |
-| `caCert` | — | — |
-| `timeoutMs` | `30000` | `600000` |
-| `maxRows` | `10000` | `1000000` |
-| `poolMax` | `5` | `100` |
-
-### Metadata (chỉ JSON — quyết định AI routing)
-
-| Field | Tác dụng |
+| Trường | Mô tả |
 |---|---|
-| `displayName` | Nhãn ngắn cạnh tên alias trong tool description. |
-| `description` | Mô tả 1 dòng "DB này dùng cho việc gì". Inject vào tool description để AI biết gọi alias nào. |
-| `tablesHint` | Danh sách bảng thường dùng — gợi ý cho AI điểm bắt đầu. |
-| `defaultAlias` (top-level) | Hint hiển thị trong tool description khi user không chỉ DB. `databaseAlias` vẫn **bắt buộc** ở schema — đây chỉ là gợi ý route, không phải default ở server. |
+| `aliases` | Bắt buộc. Một map từ tên alias sang config. Tên phải khớp `^[a-z][a-z0-9_]*$`. |
+| `defaultAlias` | Tùy chọn. Khi được đặt, các tool có thể bỏ qua `databaseAlias` và alias này sẽ được dùng. |
+| `logLevel` | `debug`, `info` (mặc định), `warn` hoặc `error`. Biến môi trường `MCP_DB_LOG_LEVEL` được ưu tiên hơn. |
 
-Khi start, server inject metadata vào description của mọi tool, đồng thời thêm `enum` constraint cho `databaseAlias` liệt kê các alias đã load — client không thể truyền alias không tồn tại.
+Server cũng thêm một `enum` JSON-Schema gồm các alias đã nạp vào `databaseAlias`, nên client không thể nhắm tới một alias không tồn tại.
 
-### Toàn server
+### Cách khác: biến môi trường
 
-| Setting | Mặc định | Cách set |
-|---|---|---|
-| Log level | `info` | env: `MCP_DB_LOG_LEVEL=debug` &nbsp;**hoặc**&nbsp; JSON: `"logLevel": "debug"` (top-level) |
-
-### Quy tắc đặt tên alias
-
-| Nguồn | Pattern | Ví dụ |
-|---|---|---|
-| JSON `aliases` key | `^[a-z][a-z0-9_]*$` *(lowercase)* | `prod`, `db1`, `analytics_2024` |
-| Env var `DB_<ALIAS>_*` | `^[A-Z][A-Z0-9_]*$` *(uppercase)* | `PROD`, `DB1`, `ANALYTICS_2024` |
-| Tool call `databaseAlias` | luôn lowercase | `"prod"` |
-
----
-
-## Phương án thay thế: cấu hình bằng env vars
-
-Khi `MCP_DB_CONFIG` **không** được set, server fallback sang `DB_<ALIAS>_*`. Dùng cho case single-DB đơn giản hoặc khi client không tham chiếu được file path.
+Khi `MCP_DB_CONFIG` **không** được đặt, các alias được đọc từ các biến `DB_<ALIAS>_*`. Cách này tiện khi chỉ có một database:
 
 ```json
 "env": {
@@ -154,98 +170,93 @@ Khi `MCP_DB_CONFIG` **không** được set, server fallback sang `DB_<ALIAS>_*`
 }
 ```
 
-Mapping tên = SCREAMING_SNAKE_CASE của JSON field. Đầy đủ: `DB_<ALIAS>_TYPE`, `_URL`, `_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_DATABASE`, `_MODE`, `_SSL`, `_CA_CERT`, `_TIMEOUT_MS`, `_MAX_ROWS`, `_POOL_MAX`. Env loader **không** hỗ trợ metadata (`displayName`/`description`/`tablesHint`) — chỉ JSON có.
+Các trường khả dụng: `_TYPE`, `_URL`, `_HOST`, `_PORT`, `_USER`, `_PASSWORD`, `_DATABASE`, `_MODE`, `_SSL`, `_CA_CERT`, `_TIMEOUT_MS`, `_MAX_ROWS` và `_POOL_MAX`. Tên alias viết hoa trong tên biến (`DB_PROD_*`) và viết thường trong lời gọi tool (`"prod"`). Metadata định tuyến chỉ có trong JSON config. Xem [`.env.example`](./.env.example).
 
-**Thứ tự ưu tiên (exclusive):**
-
-- Có `MCP_DB_CONFIG` → JSON loader, `DB_*` env vars bị bỏ qua hoàn toàn.
-- Không có `MCP_DB_CONFIG` → env-var loader.
-- Cả 2 đều rỗng → server exit code 1.
-
-Xem [.env.example](./.env.example) để có template env đầy đủ.
-
----
+Hai loader loại trừ lẫn nhau:
+- Nếu `MCP_DB_CONFIG` được đặt, file JSON được dùng và các biến `DB_*` bị bỏ qua.
+- Nếu không đặt, các biến `DB_*` được dùng.
+- Nếu cả hai cách đều không nạp được alias nào, server thoát với mã 1.
 
 ## Mô hình bảo mật
 
-Mỗi alias có **mode** quy định loại SQL được phép:
+### Mode
 
-| Mode | Cho phép |
+| Mode | Các câu lệnh được phép |
 |---|---|
-| `readonly` *(mặc định)* | SELECT, EXPLAIN, DESCRIBE, SHOW, USE |
-| `readwrite` | + INSERT, UPDATE, DELETE, MERGE |
-| `readwrite+ddl` | + CREATE, DROP, ALTER, TRUNCATE, GRANT, REVOKE, RENAME |
+| `readonly` *(mặc định)* | `SELECT`, `EXPLAIN`, `DESCRIBE`, `SHOW`, `USE` |
+| `readwrite` | mọi câu lệnh ở trên, cộng thêm `INSERT`, `UPDATE`, `DELETE`, `MERGE` |
+| `readwrite+ddl` | mọi câu lệnh ở trên, cộng thêm `CREATE`, `DROP`, `ALTER`, `TRUNCATE`, `GRANT`, `REVOKE`, `RENAME` |
 
-Mặc định `readonly` — writes bị chặn trừ khi anh opt-in. Statement không nhận diện được bị từ chối kể cả ở `readwrite+ddl`. Multi-statement: mode strict nhất thắng. Operation bị chặn trả về `DB_PERMISSION_DENIED` kèm tên setting cần đổi.
+Các loại câu lệnh không xác định bị từ chối ở mọi mode. Một câu lệnh bị chặn sẽ trả về `DB_PERMISSION_DENIED` kèm đúng thiết lập cần đổi. Các kết nối MySQL chạy với `multipleStatements: false`.
 
-### Parameterized queries
-
-```js
-// Vị trí — params là array
-{ databaseAlias: "prod", sql: "SELECT * FROM users WHERE id = ?", params: [42] }
-
-// Tên — params là object
-{ databaseAlias: "prod", sql: "SELECT * FROM users WHERE id = :id", params: { id: 42 } }
-```
-
-Server dịch placeholder sang native của từng dialect (`$1`/`?`/`@p1`). Placeholder trong string literal và comment bị bỏ qua. Số placeholder/param không khớp → validation error.
-
-### Row caps
-
-SELECT không có `LIMIT`/`TOP`/`FETCH` bị cap ở `maxRows` (mặc định 10 000). Response có `truncated: true` khi chạm cap. Override per-query:
+### Query có tham số
 
 ```js
-db_query({ databaseAlias: "prod", sql: "SELECT * FROM big_table", maxRows: 50, timeoutMs: 5000 })
+// Positional
+{ "databaseAlias": "prod", "sql": "SELECT * FROM users WHERE id = ?", "params": [42] }
+
+// Named
+{ "databaseAlias": "prod", "sql": "SELECT * FROM users WHERE id = :id", "params": { "id": 42 } }
 ```
 
-Override bị bound bởi alias config + hard cap toàn cục (1 000 000 rows, 600 000 ms).
+Placeholder được chuyển thành `$1`, `?` hoặc `@p1` tùy dialect. Placeholder nằm trong string literal và comment được giữ nguyên, và việc placeholder không khớp với params sẽ bị từ chối.
 
----
+### Giới hạn số dòng và timeout
 
-## Tools
+Một câu `SELECT` không có `LIMIT`, `TOP` hoặc `FETCH` bị giới hạn ở `maxRows`, và response khi đó có thêm `truncated: true`. Mỗi lời gọi có thể hạ thấp các giới hạn này, nhưng không bao giờ vượt quá thiết lập của alias hay các giới hạn cứng toàn cục:
 
-Tool descriptions được rebuild lúc start để chèn alias roster đã load — AI thấy mỗi DB dùng cho gì, không chỉ là 1 list tên.
+```js
+{ "databaseAlias": "prod", "sql": "SELECT * FROM big_table", "maxRows": 50, "timeoutMs": 5000 }
+```
 
-| Tool | Inputs | Mô tả |
+## Tool và resource
+
+Phần mô tả tool được dựng lại khi khởi động để bao gồm danh sách các alias đã nạp.
+
+| Tool | Đầu vào | Mô tả |
 |---|---|---|
-| `db_query` | `databaseAlias`, `sql`, `params?`, `maxRows?`, `timeoutMs?` | Chạy parameterized SQL. |
-| `db_list_tables` | `databaseAlias`, `schema?` | Liệt kê tables (filter theo schema nếu có). |
-| `db_describe_table` | `databaseAlias`, `tableName`, `schema?` | Columns + indexes của 1 table. |
-| `db_test_connection` | `databaseAlias` | Healthcheck `SELECT 1` nhẹ. |
-| `db_query_history` | `databaseAlias?`, `limit?` | Metadata của query gần đây (giữ tối đa 50, không lưu SQL text). |
-| `db_explain_query` | `databaseAlias`, `sql`, `params?` | EXPLAIN theo dialect. |
+| `db_query` | `databaseAlias`, `sql`, `params?`, `maxRows?`, `timeoutMs?` | Chạy SQL có tham số. |
+| `db_list_tables` | `databaseAlias`, `schema?`, `limit?`, `offset?`, `namePattern?` | Liệt kê các bảng. Mỗi trang mặc định 100 dòng (tối đa 500), và `namePattern` nhận một pattern `LIKE` của SQL như `sale_%`. |
+| `db_describe_table` | `databaseAlias`, `tableName`, `schema?` | Các cột và index của một bảng. |
+| `db_explain_query` | `databaseAlias`, `sql`, `params?` | `EXPLAIN` theo từng dialect. |
+| `db_test_connection` | `databaseAlias` | Health check nhẹ bằng `SELECT 1`. |
+| `db_query_history` | `databaseAlias?`, `limit?` | Metadata của các query gần đây: 50 lời gọi gần nhất, không kèm nội dung SQL. |
 
-## Resources
+`databaseAlias` là tùy chọn ở mọi tool khi `defaultAlias` đã được cấu hình.
 
-- `db://aliases` — JSON summary các alias đã load. Có `displayName`/`description`/`tablesHint` nếu set. Không lộ secret.
-- `db://security-guide` — Markdown tham chiếu mode + parameterized queries.
+| Resource | Nội dung |
+|---|---|
+| `db://aliases` | Tóm tắt dạng JSON về các alias đã nạp và metadata của chúng. Không chứa secret. |
+| `db://security-guide` | Tài liệu tham khảo dạng Markdown về các mode và query có tham số. |
 
----
+## Xử lý sự cố
 
-## Troubleshooting
+| Mã hoặc thông báo | Ý nghĩa và cách khắc phục |
+|---|---|
+| `DB_PERMISSION_DENIED` | Mode của alias không cho phép câu lệnh này. Nâng `mode` trong JSON config hoặc trong `DB_<ALIAS>_MODE`. |
+| `DB_TIMEOUT` | Query chạy quá timeout. Tăng `timeoutMs` của alias hoặc truyền `timeoutMs` trong lời gọi. |
+| `DB_RESULT_TOO_LARGE` | Vượt quá giới hạn số dòng. Thêm `LIMIT` hoặc tăng `maxRows`. |
+| `DB_CONNECTION_FAILED` | Không kết nối được tới database. Kiểm tra host, port và thông tin đăng nhập. Server đã retry 3 lần với backoff. |
+| `DB_VALIDATION_FAILED` | Identifier không hợp lệ. `databaseAlias`, `tableName` và `schema` phải khớp `^[A-Za-z_][A-Za-z0-9_]*$`. |
+| `DB_CONFIG_INVALID` | Một alias có config biến môi trường sai. Thông báo nêu tên trường, và các alias khác vẫn được nạp. |
+| `Config file not readable at '...'` | Dùng đường dẫn `MCP_DB_CONFIG` tuyệt đối và kiểm tra quyền của file. |
+| `Config file is not valid JSON` / `Config schema error: ...` | Sửa trường mà thông báo nêu tên. Khi đã đặt `$schema`, editor sẽ tô sáng lỗi cho bạn. |
+| `defaultAlias '...' does not reference a loaded alias` | Gõ sai `defaultAlias`. Server vẫn khởi động, nhưng không có alias mặc định. |
+| `event="no_valid_aliases"` (exit 1) | Không có alias nào được nạp. Hãy cấu hình ít nhất một alias. |
 
-| Code / event | Ý nghĩa | Cách fix |
-|---|---|---|
-| `DB_PERMISSION_DENIED` | Operation không được mode alias cho phép | Raise `mode` trong JSON (hoặc `DB_<ALIAS>_MODE` env). |
-| `DB_TIMEOUT` | Query vượt timeout | Raise `timeoutMs` của alias hoặc truyền per-request. |
-| `DB_RESULT_TOO_LARGE` | Vượt row cap | Thêm `LIMIT`, hoặc raise `maxRows`. |
-| `DB_CONNECTION_FAILED` | Không kết nối được DB | Kiểm tra host/port/credentials. Server retry 3× với backoff. |
-| `DB_VALIDATION_FAILED` | Identifier sai | `databaseAlias` / `tableName` / `schema` phải match `^[A-Za-z_][A-Za-z0-9_]*$`. |
-| `DB_CONFIG_INVALID` | Env-var alias config sai | Message nêu rõ field + giá trị hợp lệ. Alias khác vẫn load. |
-| `Config file not readable at '...'` | `MCP_DB_CONFIG` path sai hoặc không đọc được | Dùng đường dẫn **tuyệt đối**; kiểm tra permission. |
-| `Config file is not valid JSON: ...` | JSON syntax sai | Validate file (editor sẽ flag khi có `$schema`). |
-| `Config schema error: aliases.<a>.<field>: ...` | JSON field sai | Message nêu field + lý do; fix hoặc xóa alias entry đó. |
-| `defaultAlias '...' does not reference a loaded alias` | Top-level `defaultAlias` typo | Match đúng key có trong `aliases`. Server vẫn start; hint chỉ bị bỏ qua. |
-| `event="no_valid_aliases"` (exit 1) | Không alias nào load được | Set ít nhất 1 alias trong JSON hoặc env. |
+Để xem những gì đã được nạp, hãy đọc dòng log khởi động `loaded_aliases` hoặc resource `db://aliases`.
 
-Kiểm tra alias đã load: đọc startup log (`event="loaded_aliases" source="..." count=..."`) hoặc resource `db://aliases`.
+## Phát triển
 
----
+```bash
+pnpm install
+pnpm --filter @unclecat/mcp-multi-db test
+pnpm --filter @unclecat/mcp-multi-db test:coverage
+MCP_DB_CONFIG=/path/to/config.json node db/index.js
+```
 
-## Đóng góp
+Ghi chú kiến trúc dành cho contributor nằm trong [CLAUDE.md](./CLAUDE.md). Quy trình branch và release được mô tả trong [CONTRIBUTING.md](../CONTRIBUTING.md).
 
-Xem [CONTRIBUTING.md](../CONTRIBUTING.md) ở root monorepo.
+## Giấy phép
 
-## License
-
-MIT — xem [LICENSE](./LICENSE).
+[MIT](./LICENSE)

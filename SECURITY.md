@@ -3,6 +3,7 @@
 This policy applies to **all packages** in this monorepo:
 
 - [`@unclecat/mcp-multi-db`](./db)
+- [`@unclecat/mcp-obsidian`](./obsidian)
 - [`@unclecat/mcp-odoo`](./odoo)
 
 ## Reporting a vulnerability
@@ -23,13 +24,14 @@ Only the **latest released minor** of each package receives security fixes.
 | Package                    | Supported |
 | -------------------------- | --------- |
 | `@unclecat/mcp-multi-db`   | latest minor |
+| `@unclecat/mcp-obsidian`   | latest minor |
 | `@unclecat/mcp-odoo`       | latest minor |
 
 Older versions can be patched on a best-effort basis if the vulnerability is severe and the consumer cannot upgrade.
 
 ## Threat model
 
-All packages run as **trusted processes** with access to external systems (databases, ERP APIs). They are designed to be invoked by a **single MCP host process** (Claude Desktop, Claude Code, etc.) — not exposed as a network service.
+All packages run as **trusted processes** with access to external systems (databases, ERP APIs) or local files (Obsidian vaults). They are designed to be invoked by a **single MCP host process** (Claude Desktop, Claude Code, etc.) — not exposed as a network service.
 
 Shared mitigations:
 
